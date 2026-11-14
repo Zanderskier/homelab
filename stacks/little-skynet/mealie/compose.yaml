@@ -1,40 +1,43 @@
 services:
   mealie:
-    image: ghcr.io/mealie-recipes/mealie:latest
+    image: ghcr.io/mealie-recipes/mealie:latest 
     container_name: mealie
+    restart: always
     ports:
-      - "9925:9000"
+        - "9925:9000" 
     deploy:
       resources:
         limits:
-          memory: 1000M
+          memory: 1000M 
     volumes:
       - /main/mealie/mealie-data:/app/data/
     environment:
+      # Set Backend ENV Variables Here
       ALLOW_SIGNUP: "false"
       PUID: 1000
       PGID: 1000
-      TZ: ${TZ:-America/Los_Angeles}
-      BASE_URL: ${MEALIE_BASE_URL:?Set MEALIE_BASE_URL, e.g. https://mealie.failsafe.work}
+      TZ: America/Anchorage
+      BASE_URL: ${MEALIE_BASE_URL:-https://mealie.yourdomain.com}
+      # Database Settings
       DB_ENGINE: postgres
       POSTGRES_USER: mealie
-      POSTGRES_PASSWORD: ${MEALIE_DB_PASSWORD:?Set MEALIE_DB_PASSWORD}
-      POSTGRES_SERVER: postgres   # service name below, not container_name
+      POSTGRES_PASSWORD: mealie
+      POSTGRES_SERVER: postgres-mealie
       POSTGRES_PORT: 5432
       POSTGRES_DB: mealie
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped
 
   postgres:
+    container_name: postgres-mealie
     image: postgres:17
-    container_name: mealie-postgres
+    restart: always
     volumes:
       - /main/mealie/mealie-pgdata:/var/lib/postgresql/data
     environment:
+      POSTGRES_PASSWORD: mealie
       POSTGRES_USER: mealie
-      POSTGRES_PASSWORD: ${MEALIE_DB_PASSWORD:?Set MEALIE_DB_PASSWORD}
       PGUSER: mealie
       POSTGRES_DB: mealie
     healthcheck:
@@ -42,4 +45,4 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
-    restart: unless-stopped
+

@@ -14,4 +14,4 @@ services:
       - /mnt/media-storage/audio-book-shelf/books:/books
     environment:
       TZ: ${TZ:-America/Los_Angeles}
-    restart: unless-stopped
+    restart: always
