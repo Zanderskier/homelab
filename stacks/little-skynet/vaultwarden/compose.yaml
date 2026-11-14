@@ -1,6 +1,11 @@
 # The old compose file never passed its .env to the container, so ADMIN_TOKEN, SMTP_* and SSO_*
-# were NOT applied unless set through /admin. env_file below now applies them. Before deploying,
-# read docs/migration.md (SSO_ONLY=true would lock out the break-glass account if Authentik is down).
+# were NOT applied unless set through /admin. The environment block below now applies them. Before
+# deploying, read docs/migration.md (SSO_ONLY=true would lock out the break-glass account if
+# Authentik is down).
+#
+# Values come from the stack's Environment variables in Portainer. Git-deployed stacks can't use
+# env_file: stack.env -- Portainer only creates that file for web-editor/upload deploys, and it
+# can't be committed because it holds secrets.
 services:
   vaultwarden:
     image: vaultwarden/server:latest
@@ -9,6 +14,27 @@ services:
       - /main/vaultwarden:/data/
     ports:
       - "8123:80"
-    env_file:
-      - stack.env
+    environment:
+      - DOMAIN=${DOMAIN:-https://vaultwarden.failsafe.work}
+      - SIGNUPS_ALLOWED=${SIGNUPS_ALLOWED:-false}
+      - SSO_ONLY=${SSO_ONLY:-false}
+
+      # Bare keys are passed through only when defined in Portainer; undefined ones are left out of
+      # the container so Vaultwarden's defaults apply. Delete unused lines in Portainer rather than
+      # leaving them as KEY= (an empty string counts as set, e.g. empty SMTP_HOST fails startup).
+      - ADMIN_TOKEN
+      - SMTP_HOST
+      - SMTP_PORT
+      - SMTP_SECURITY
+      - SMTP_FROM
+      - SMTP_USERNAME
+      - SMTP_PASSWORD
+      - SSO_ENABLED
+      - SSO_AUTHORITY
+      - SSO_CLIENT_ID
+      - SSO_CLIENT_SECRET
+      - SSO_SCOPES
+      - SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION
+      - SSO_CLIENT_CACHE_EXPIRATION
+      - SSO_SIGNUPS_MATCH_EMAIL
     restart: unless-stopped
