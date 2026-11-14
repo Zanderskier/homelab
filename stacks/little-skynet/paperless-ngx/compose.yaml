@@ -1,0 +1,55 @@
+# Deploy as a Portainer Git stack. All variables from .env.example go in the stack's
+# environment; Portainer writes them to stack.env, which the webserver loads below.
+services:
+  broker:
+    image: docker.io/library/redis:8
+    volumes:
+      - /main/paperless-ngx/redisdata:/data
+    restart: unless-stopped
+
+  db:
+    image: docker.io/library/postgres:18
+    volumes:
+      - /main/paperless-ngx/pgdata:/var/lib/postgresql
+    environment:
+      POSTGRES_DB: paperless
+      POSTGRES_USER: paperless
+      POSTGRES_PASSWORD: ${PAPERLESS_DB_PASSWORD:?Set PAPERLESS_DB_PASSWORD}
+    restart: unless-stopped
+
+  webserver:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    depends_on:
+      - db
+      - broker
+      - gotenberg
+      - tika
+    ports:
+      - "8010:8000"
+    volumes:
+      - /main/paperless-ngx/data:/usr/src/paperless/data
+      - /main/paperless-ngx/media:/usr/src/paperless/media
+      - /main/paperless-ngx/export:/usr/src/paperless/export
+      - /main/paperless-ngx/consume:/usr/src/paperless/consume
+    environment:
+      PAPERLESS_REDIS: redis://broker:6379
+      PAPERLESS_DBHOST: db
+      PAPERLESS_DBPASS: ${PAPERLESS_DB_PASSWORD:?Set PAPERLESS_DB_PASSWORD}
+      PAPERLESS_TIKA_ENABLED: "1"
+      PAPERLESS_TIKA_ENDPOINT: http://tika:9998
+      PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://gotenberg:3000
+    env_file:
+      - stack.env
+    restart: unless-stopped
+
+  gotenberg:
+    image: docker.io/gotenberg/gotenberg:8
+    command:
+      - "gotenberg"
+      - "--chromium-disable-javascript=true"
+      - "--chromium-allow-list=file:///tmp/.*"
+    restart: unless-stopped
+
+  tika:
+    image: docker.io/apache/tika:latest
+    restart: unless-stopped

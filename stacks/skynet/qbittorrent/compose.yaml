@@ -1,0 +1,84 @@
+services:
+  pia-qbittorrent:
+      image: j4ym0/pia-qbittorrent:5.2.4-ubuntu
+      container_name: pia-qbittorrent
+      cap_add:
+          - NET_ADMIN
+      environment:
+          - REGION=${PIA_REGION:-CA_Vancouver}
+          - USER=${PIA_USER}
+          - PASSWORD=${PIA_PASSWORD}
+          - PORT_FORWARDING=true
+          - UID=1000
+          - GID=1001
+          - UMASK=002
+      volumes:
+          - /mnt/media-storage/arr-stack/qbittorrent/qBittorrent/config:/config
+          - /mnt/media-storage:/downloads
+      ports:
+          - "8888:8888"
+      restart: always
+      pull_policy: always
+
+  # Sidecar that keeps the tracker's dynamic seedbox IP in sync with the PIA VPN IP.
+  # It shares pia-qbittorrent's network namespace, so its requests leave through the VPN tunnel.
+  seedbox-ip-sync:
+      image: curlimages/curl:latest
+      container_name: seedbox-ip-sync
+      network_mode: "service:pia-qbittorrent"
+      depends_on:
+          - pia-qbittorrent
+      user: "0:0"
+      environment:
+          - SEEDBOX_SESSION_COOKIE=${SEEDBOX_SESSION_COOKIE}
+          - SEEDBOX_SYNC_INTERVAL=${SEEDBOX_SYNC_INTERVAL:-3600}
+      volumes:
+          - /mnt/media-storage/arr-stack/qbittorrent/seedbox:/data
+      restart: unless-stopped
+      pull_policy: always
+      entrypoint: ["/bin/sh", "-c"]
+      command:
+          - |
+            log() { echo "$$(date '+%Y-%m-%d %H:%M:%S') $$*"; }
+            URL=${SEEDBOX_SYNC_URL}
+            JAR=/data/session.cookies
+
+            if [ -z "$$SEEDBOX_SESSION_COOKIE" ] && [ ! -s "$$JAR" ]; then
+              log "ERROR: SEEDBOX_SESSION_COOKIE is not set and no saved cookie exists in $$JAR"
+              exit 1
+            fi
+
+            update() {
+              if [ "$$1" = "env" ] || [ ! -s "$$JAR" ]; then
+                log "Using SEEDBOX_SESSION_COOKIE from environment"
+                curl -sS -m 30 -c "$$JAR" -b "session=$$SEEDBOX_SESSION_COOKIE" "$$URL"
+              else
+                curl -sS -m 30 -c "$$JAR" -b "$$JAR" "$$URL"
+              fi
+            }
+
+            log "Waiting 30s for VPN to come up..."
+            sleep 30
+            fails=0
+            while true; do
+              log "VPN IP: $$(curl -s -m 15 https://ifconfig.me || echo unknown)"
+              resp=$$(update) ; rc=$$?
+              if [ $$rc -eq 0 ] && echo "$$resp" | grep -qiE 'No Session Cookie|Invalid session'; then
+                log "Saved cookie rejected ($$resp); retrying with SEEDBOX_SESSION_COOKIE from environment"
+                rm -f "$$JAR"
+                resp=$$(update env) ; rc=$$?
+              fi
+              if [ $$rc -ne 0 ]; then
+                fails=$$((fails + 1))
+                log "curl failed (rc=$$rc, $$fails/3)"
+                if [ $$fails -ge 3 ]; then
+                  log "Network unreachable; exiting so Docker restarts and rejoins the VPN namespace"
+                  exit 1
+                fi
+                sleep 60
+                continue
+              fi
+              fails=0
+              log "tracker response: $$resp"
+              sleep "$$SEEDBOX_SYNC_INTERVAL"
+            done

@@ -1,0 +1,17 @@
+services:
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    container_name: audiobookshelf
+    pull_policy: always   # remove once Renovate pins versions (see README roadmap)
+    ports:
+      - "13378:80"
+    volumes:
+      - /mnt/media-storage/audio-book-shelf/audiobooks:/audiobooks
+      - /mnt/media-storage/audio-book-shelf/dads-books:/dads-books
+      - /mnt/media-storage/audio-book-shelf/podcasts:/podcasts
+      - /mnt/media-storage/audio-book-shelf/config:/config
+      - /mnt/media-storage/audio-book-shelf/metadata:/metadata
+      - /mnt/media-storage/audio-book-shelf/books:/books
+    environment:
+      TZ: ${TZ:-America/Los_Angeles}
+    restart: unless-stopped

@@ -1,0 +1,15 @@
+services:
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    ports:
+      - "4000:3000"
+    volumes:
+      - /main/homepage/config:/app/config
+      # docker.sock removed: config/docker.yaml defines no Docker hosts, and a socket mount
+      # (even :ro) is full control of the Docker host. If Docker widgets are wanted later,
+      # add a docker-socket-proxy service instead of mounting the socket.
+    environment:
+      HOMEPAGE_ALLOWED_HOSTS: ${HOMEPAGE_ALLOWED_HOSTS:-192.168.50.81:4000,192.168.50.81}
+      TZ: ${TZ:-America/Los_Angeles}
+    restart: unless-stopped

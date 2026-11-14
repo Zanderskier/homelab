@@ -1,0 +1,17 @@
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:2
+    container_name: uptime-kuma
+    ports:
+      - "3001:3001"
+    volumes:
+      - uptime-kuma:/app/data
+    restart: unless-stopped
+
+# Named volumes get the stack name as a prefix. Redeploying under a new Portainer stack name would
+# silently create a NEW empty volume, so the existing one is pinned by its real name. If the deploy
+# fails with "volume not found", run `docker volume ls | grep kuma` and put that name here.
+volumes:
+  uptime-kuma:
+    external: true
+    name: uptime-kuma_uptime-kuma

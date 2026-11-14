@@ -1,0 +1,18 @@
+# Secrets never go in this repo. They live in Portainer stack environment variables
+# (and later Ansible Vault). Only .env.example templates are committed.
+.env
+.env.*
+!.env.example
+stack.env
+*.pem
+*.key
+
+# Local backups / editor noise
+*.bak
+*.backup
+.vscode/*
+!.vscode/extensions.json
+*.code-workspace
+.history/
+.DS_Store
+Thumbs.db
