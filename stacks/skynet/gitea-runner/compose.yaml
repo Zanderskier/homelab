@@ -9,7 +9,7 @@ services:
     restart: always
     privileged: true
     environment:
-      GITEA_INSTANCE_URL: ${GITEA_INSTANCE_URL :-https://gitea.failsafe.work}
+      GITEA_INSTANCE_URL: ${GITEA_INSTANCE_URL}
       GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN}
     volumes:
       - ./data:/data
