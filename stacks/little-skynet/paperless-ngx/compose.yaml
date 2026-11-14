@@ -1,24 +1,50 @@
-# Deploy as a Portainer Git stack. All variables from .env.example go in the stack's
-# environment; Portainer writes them to stack.env, which the webserver loads below.
+# Docker Compose file for running paperless from the Docker Hub.
+# This file contains everything paperless needs to run.
+# Paperless supports amd64, arm and arm64 hardware.
+#
+# All compose files of paperless configure paperless in the following way:
+#
+# - Paperless is (re)started on system boot, if it was running before shutdown.
+# - Docker volumes for storing data are managed by Docker.
+# - Folders for importing and exporting files are created in the same directory
+#   as this file and mounted to the correct folders inside the container.
+# - Paperless listens on port 8010.
+#
+# In addition to that, this Docker Compose file adds the following optional
+# configurations:
+#
+# - Instead of SQLite (default), PostgreSQL is used as the database server.
+#
+# To install and update paperless with this file, do the following:
+#
+# - Open portainer Stacks list and click 'Add stack'
+# - Paste the contents of this file and assign a name, e.g. 'paperless'
+# - Upload 'docker-compose.env' by clicking on 'Load variables from .env file'
+# - Modify the environment variables as needed
+# - Click 'Deploy the stack' and wait for it to be deployed
+#
+# For more extensive installation and update instructions, refer to the
+# documentation.
 services:
   broker:
     image: docker.io/library/redis:8
+    restart: always
     volumes:
       - /main/paperless-ngx/redisdata:/data
-    restart: unless-stopped
 
   db:
     image: docker.io/library/postgres:18
+    restart: always
     volumes:
       - /main/paperless-ngx/pgdata:/var/lib/postgresql
     environment:
       POSTGRES_DB: paperless
       POSTGRES_USER: paperless
-      POSTGRES_PASSWORD: ${PAPERLESS_DB_PASSWORD:?Set PAPERLESS_DB_PASSWORD}
-    restart: unless-stopped
+      POSTGRES_PASSWORD: paperless
 
   webserver:
     image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: always
     depends_on:
       - db
       - broker
@@ -34,22 +60,29 @@ services:
     environment:
       PAPERLESS_REDIS: redis://broker:6379
       PAPERLESS_DBHOST: db
-      PAPERLESS_DBPASS: ${PAPERLESS_DB_PASSWORD:?Set PAPERLESS_DB_PASSWORD}
+
+      # Enable Tika & Gotenberg
       PAPERLESS_TIKA_ENABLED: "1"
       PAPERLESS_TIKA_ENDPOINT: http://tika:9998
       PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://gotenberg:3000
+
     env_file:
       - stack.env
-    restart: unless-stopped
 
   gotenberg:
-    image: docker.io/gotenberg/gotenberg:8
+    image: gotenberg/gotenberg:8
+    restart: always
     command:
       - "gotenberg"
       - "--chromium-disable-javascript=true"
       - "--chromium-allow-list=file:///tmp/.*"
-    restart: unless-stopped
 
   tika:
-    image: docker.io/apache/tika:latest
-    restart: unless-stopped
+    image: apache/tika:latest
+    restart: always
+
+volumes:
+  data:
+  media:
+  pgdata:
+  redisdata:
