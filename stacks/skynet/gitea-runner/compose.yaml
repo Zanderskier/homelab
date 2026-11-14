@@ -1,0 +1,21 @@
+# Gitea Actions runner. Runs CI jobs (lint, Renovate) in throwaway containers on this LXC.
+# It needs the Docker socket to start those containers, which makes it root-equivalent on this
+# LXC. That's why it gets its own LXC instead of sharing one with apps.
+
+services:
+  gitea-runner:
+    image: docker.io/gitea/runner:5-dind
+    container_name: gitea-runner-1
+    restart: always
+    privileged: true
+    environment:
+      GITEA_INSTANCE_URL: ${GITEA_INSTANCE_URL :-https://gitea.failsafe.work}
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN}
+    volumes:
+      - ./data:/data
+      - runner-docker:/var/lib/docker
+
+volumes:
+  runner-docker:
+    name: runner-docker
+
