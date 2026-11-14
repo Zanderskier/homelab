@@ -22,7 +22,7 @@ services:
       DB_ENGINE: postgres
       POSTGRES_USER: mealie
       POSTGRES_PASSWORD: mealie
-      POSTGRES_SERVER: postgres-mealie
+      POSTGRES_SERVER: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: mealie
     depends_on:
@@ -30,7 +30,7 @@ services:
         condition: service_healthy
 
   postgres:
-    container_name: postgres-mealie
+    container_name: postgres
     image: postgres:17
     restart: always
     volumes:
