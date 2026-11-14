@@ -47,8 +47,10 @@ variables to set in Portainer.
 
 ## Conventions
 
-- **No secrets in Git.** Values come from Portainer stack variables (`${VAR}` in compose, or
-  `stack.env` via `env_file`). `${VAR:?message}` makes a deploy fail loudly if a secret is missing.
+- **No secrets in Git.** Values come from Portainer stack variables, pulled into compose with
+  `${VAR}` interpolation or bare `- KEY` pass-through. Git-deployed stacks don't get a `stack.env`
+  file, so `env_file: stack.env` doesn't work here. `${VAR:?message}` makes a deploy fail loudly if a
+  required secret is missing.
 - `restart: unless-stopped` everywhere, `TZ` defaults to `America/Los_Angeles`.
 - Bind mounts for app data (`/main/...` on little-skynet, `/mnt/media-storage/...` on skynet) so data
   survives stack renames; named volumes are pinned with `external: true`.
@@ -61,7 +63,8 @@ Gitea, Authentik, Immich (VM), File Browser, Plex (helper-script LXC), Pi-hole, 
 ## Roadmap
 
 - [x] Merge per-app repos into one repo; remove secrets from compose files
-- [ ] Single Cloudflare tunnel + Zero Trust Access on admin UIs ([docs/cloudflare.md](docs/cloudflare.md))
+- [x] Single Cloudflare tunnel with published application routes for every hostname
+- [ ] Delete old tunnels; Zero Trust Access on admin UIs ([docs/cloudflare.md](docs/cloudflare.md))
 - [ ] Renovate: pin image versions, PRs for updates, auto-merge low-risk apps
 - [ ] Gitea Actions: lint compose/YAML on every PR
 - [ ] Ansible: OS patching for all LXCs/VMs/Pis, Proxmox/PBS updates, Immich, Portainer
