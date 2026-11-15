@@ -2,7 +2,9 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "timezone": "America/Los_Angeles",
-  "dependencyDashboard": true,
+  "dependencyDashboard": {
+    "enabled": true
+  },
   "prHourlyLimit": 0,
   "prConcurrentLimit": 15,
   "gitAuthor": "Renovate Bot <renovate-bot@noreply.failsafe.work>",
@@ -30,6 +32,11 @@
       "description": "linuxserver restarted sonarr's build numbers at ls1, so the older ls3xx builds of 4.0.20.3014 look 'newer'. Remove after sonarr 4.0.21",
       "matchPackageNames": ["lscr.io/linuxserver/sonarr"],
       "allowedVersions": "!/^4\\.0\\.20\\.3014-ls\\d{3}$/"
+    },
+    {
+      "description": "qBittorrent is version-locked on purpose: no update PRs. Change the tag by hand when ready",
+      "matchPackageNames": ["docker.io/j4ym0/pia-qbittorrent"],
+      "enabled": false
     },
     {
       "description": "Database major versions need a dump/restore or pg_upgrade, never an image bump",
