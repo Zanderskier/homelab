@@ -11,7 +11,7 @@ set -euo pipefail
 
 # Both values are printed at the end of setup-control-node.sh.
 # Public half of the Ansible key (also in ansible/files/ansible_ed25519.pub). Safe to share.
-PUBKEY="PASTE_PUBLIC_KEY_HERE"
+PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILbupxsngQjbM3psIPg3ztEW2W8EWvwb6RvQchwBsZ7a ansible@homelab"
 # The key only works when the login comes from this address: the Ansible LXC.
 ALLOW_FROM="192.168.50.129"
 
