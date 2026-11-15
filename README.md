@@ -17,6 +17,73 @@ the source of truth: change a file, merge, and the host converges.
 | — | 2x JetKVM | Out-of-band console for both Proxmox hosts |
 | — | ASUS RT-AX1800S | Router, DHCP reservations, OpenVPN remote access |
 
+## Network
+
+LAN `192.168.50.0/24`, every address below is a DHCP reservation on the router. Public hostnames
+are on `failsafe.work`, all served through the single Cloudflare tunnel **Skynet-homelab**
+(`7dbb7570-…`), so no ports are forwarded.
+
+### Devices
+
+| Device | Hostname | IP |
+|---|---|---|
+| Pi-hole + Unbound (Pi 2) | DNS-Skynet | 192.168.50.2 |
+| Proxmox host: skynet | Skynet | 192.168.50.8 |
+| JetKVM #2 | Jet-KVM2 | 192.168.50.18 |
+| cloudflared | CloudFlare | 192.168.50.27 |
+| Critical-data backup (Pi 4) | Skynet-Data-recover | 192.168.50.75 |
+| Proxmox Backup Server | PBS | 192.168.50.76 |
+| Portainer + little-skynet stacks | Portainer-Lsky | 192.168.50.81 |
+| Plex | Video-Captin | 192.168.50.88 |
+| Gitea Actions runner | gitea-runner | 192.168.50.90 |
+| Immich (VM) | Immich | 192.168.50.106 |
+| Gitea | gittea-repo | 192.168.50.124 |
+| JetKVM #1 | Jet-KVM | 192.168.50.150 |
+| Authentik | Authentik | 192.168.50.151 |
+| Foundry VTT | Foundry-dnd | 192.168.50.159 |
+| Living room printer | Living-Room-Printer | 192.168.50.166 |
+| Arr stack (media apps) | Arr-Stack | 192.168.50.199 |
+| Proxmox host: little-skynet | Little-Skynet | 192.168.50.220 |
+| File Browser | File-Browser | 192.168.50.246 |
+
+### Services
+
+| Service | Runs on | Internal URL | Public hostname |
+|---|---|---|---|
+| Portainer | Portainer-Lsky | https://192.168.50.81:9443 | (admin, not published) |
+| Uptime Kuma | Portainer-Lsky | http://192.168.50.81:3001 | (admin, not published) |
+| Paperless-ngx | Portainer-Lsky | http://192.168.50.81:8010 | [paperless.failsafe.work](https://paperless.failsafe.work) |
+| Vaultwarden | Portainer-Lsky | http://192.168.50.81:8123 | [vaultwarden.failsafe.work](https://vaultwarden.failsafe.work) |
+| Mealie | Portainer-Lsky | http://192.168.50.81:9925 | [mealie.failsafe.work](https://mealie.failsafe.work) |
+| Homepage, Tautulli | Portainer-Lsky | 192.168.50.81 | — (LAN only) |
+| Plex | Video-Captin | http://192.168.50.88:32400 | [plex.failsafe.work](https://plex.failsafe.work) |
+| Immich | Immich | http://192.168.50.106:2283 | [immich.failsafe.work](https://immich.failsafe.work) |
+| Gitea | gittea-repo | http://192.168.50.124:3000 | [gitea.failsafe.work](https://gitea.failsafe.work) |
+| Gitea runner | gitea-runner | 192.168.50.90 | — |
+| Authentik | Authentik | http://192.168.50.151:9000 | [authentik.failsafe.work](https://authentik.failsafe.work) |
+| Foundry VTT | Foundry-dnd | http://192.168.50.3:30000 ⚠️ | [dnd.failsafe.work](https://dnd.failsafe.work) |
+| Foundry proxy | Foundry-dnd | http://192.168.50.3:3000 ⚠️ | [dnd-proxy.failsafe.work](https://dnd-proxy.failsafe.work) |
+| Sonarr | Arr-Stack | http://192.168.50.199:8989 | (admin, not published) |
+| Radarr | Arr-Stack | http://192.168.50.199:7878 | (admin, not published) |
+| Prowlarr | Arr-Stack | http://192.168.50.199:9696 | (admin, not published) |
+| SABnzbd | Arr-Stack | http://192.168.50.199:8080 | (admin, not published) |
+| qBittorrent | Arr-Stack | http://192.168.50.199:8888 | (admin, not published) |
+| Overseerr | Arr-Stack | http://192.168.50.199:5055 | [overseerr.failsafe.work](https://overseerr.failsafe.work) |
+| Requestrr | Arr-Stack | http://192.168.50.199:4545 | (admin, not published) |
+| Audiobookshelf | Arr-Stack | http://192.168.50.199:13378 | [audiobookshelf.failsafe.work](https://audiobookshelf.failsafe.work) |
+| File Browser | File-Browser | http://192.168.50.246:8080 | (admin, not published) |
+| Pi-hole | DNS-Skynet | http://192.168.50.2/admin | — |
+| Proxmox VE (skynet) | Skynet | https://192.168.50.8:8006 | — (`skynet.failsafe.work` A record → LAN IP) |
+| Proxmox VE (little-skynet) | Little-Skynet | https://192.168.50.220:8006 | — (`little-skynet.failsafe.work` A record → LAN IP) |
+| Proxmox Backup Server | PBS | https://192.168.50.76:8007 | — |
+| JetKVM | Jet-KVM / Jet-KVM2 | http://192.168.50.150 / .18 | — |
+
+⚠️ The tunnel routes `dnd` and `dnd-proxy` to `192.168.50.3`, but the Foundry-dnd reservation is
+`192.168.50.159`. One of the two needs updating.
+
+**Stale DNS records** (point at tunnels that no longer exist, safe to delete): `failsafe.work`
+(apex, tunnel `5176bf9c-…`) and `(admin hostname, not published)` (tunnel `1385d5a8-…`).
+
 ## Layout
 
 ```
