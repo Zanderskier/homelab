@@ -12,7 +12,7 @@ services:
       GITEA_INSTANCE_URL: ${GITEA_INSTANCE_URL}
       GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN}
     volumes:
-      - ./data:/data
+      - /mnt/nvme1/gitea-runner/data:/data
       - runner-docker:/var/lib/docker
 
 volumes:
