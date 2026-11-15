@@ -4,7 +4,7 @@
 
 services:
   gitea-runner:
-    image: docker.io/gitea/runner:5-dind
+    image: docker.io/gitea/runner:6-dind
     container_name: gitea-runner-1
     restart: always
     privileged: true
