@@ -1,0 +1,38 @@
+---
+# Proxmox VE + Proxmox Backup Server updates. Only run by hand from the Actions tab.
+# It never reboots: the runner lives on skynet, so rebooting skynet would kill this job halfway.
+# Reboot from the Proxmox UI (or the JetKVM) when the summary says so.
+- name: Patch Proxmox VE and Proxmox Backup Server
+  hosts: proxmox:pbs
+  serial: 1
+  max_fail_percentage: 0
+  gather_facts: false
+  become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  tasks:
+    - name: Upgrade all packages (Proxmox needs dist-upgrade, never a plain upgrade)
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+        autoremove: true
+        dpkg_options: force-confdef,force-confold
+      register: apt_result
+
+    - name: Compare the running kernel with the newest installed one
+      ansible.builtin.shell: |
+        set -o pipefail
+        uname -r
+        ls /boot/vmlinuz-* | sed 's|/boot/vmlinuz-||' | sort -V | tail -n 1
+      args:
+        executable: /bin/bash
+      register: kernels
+      changed_when: false
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'packages updated' if apt_result is changed else 'already up to date' }}
+          | running {{ kernels.stdout_lines[0] }}
+          {{- (' | REBOOT NEEDED to load ' ~ kernels.stdout_lines[1])
+              if kernels.stdout_lines[0] != kernels.stdout_lines[1] else '' }}

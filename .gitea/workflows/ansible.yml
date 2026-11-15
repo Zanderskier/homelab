@@ -1,0 +1,70 @@
+# Runs Ansible on the Ansible LXC (skynet), via the runner registered there with the "ansible" label.
+# Steps run directly on that LXC (host mode), where the Ansible SSH key lives. The key is never
+# stored in Gitea.
+#   - Every Sunday 03:00 Pacific: patch-guests (OS updates for LXCs, VMs, Pis; no reboots)
+#   - Any time, by hand: Actions tab > ansible > Run workflow > pick a playbook
+name: ansible
+
+on:
+  schedule:
+    - cron: "0 11 * * 0"   # 11:00 UTC Sunday = 03:00 PST / 04:00 PDT
+  workflow_dispatch:
+    inputs:
+      playbook:
+        description: Playbook to run
+        type: choice
+        options: [ping, patch-guests, patch-hosts]
+        default: ping
+      limit:
+        description: "Only these hosts or groups (optional, e.g. pis or plex,gitea)"
+        type: string
+        required: false
+      allow_reboot:
+        description: Reboot guests that need it (Proxmox hosts are never rebooted)
+        type: boolean
+        default: false
+      check_mode:
+        description: "Dry run: show what would change, change nothing"
+        type: boolean
+        default: false
+
+jobs:
+  ansible:
+    runs-on: ansible
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ansible
+        env:
+          # renovate: datasource=github-releases depName=astral-sh/uv
+          UV_VERSION: 0.13.8
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz --strip-components=1 -C "$HOME/.local/bin"
+          export PATH="$HOME/.local/bin:$PATH"
+          # A venv in the runner's home: reused between runs, so this is quick after the first time.
+          uv venv --allow-existing --python 3.13 "$HOME/.venvs/ansible"
+          uv pip install --python "$HOME/.venvs/ansible" -r ansible/requirements.txt
+          echo "$HOME/.venvs/ansible/bin" >> "$GITHUB_PATH"
+
+      - name: Install collections
+        working-directory: ansible
+        run: ansible-galaxy collection install -r requirements.yml
+
+      - name: Run playbook
+        working-directory: ansible
+        env:
+          # Inputs are empty on scheduled runs, so these defaults apply then.
+          PLAYBOOK: ${{ inputs.playbook || 'patch-guests' }}
+          LIMIT: ${{ inputs.limit }}
+          ALLOW_REBOOT: ${{ inputs.allow_reboot || false }}
+          CHECK_MODE: ${{ inputs.check_mode || false }}
+          ANSIBLE_FORCE_COLOR: "1"
+        run: |
+          case "$PLAYBOOK" in ping|patch-guests|patch-hosts) ;; *) echo "unknown playbook"; exit 1 ;; esac
+          args=(-e "allow_reboot=$ALLOW_REBOOT")
+          [ -n "$LIMIT" ] && args+=(--limit "$LIMIT")
+          [ "$CHECK_MODE" = "true" ] && args+=(--check --diff)
+          echo "Running playbooks/$PLAYBOOK.yml ${args[*]}"
+          ansible-playbook "playbooks/$PLAYBOOK.yml" "${args[@]}"

@@ -53,3 +53,33 @@ jobs:
           if git ls-files | grep -E '(^|/)(\.env|stack\.env)$'; then
             echo "::error::Env file committed."; exit 1
           fi
+
+  # Not part of the required "lint / compose*" check, so a style warning here never blocks a merge.
+  ansible:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ansible
+        env:
+          # renovate: datasource=github-releases depName=astral-sh/uv
+          UV_VERSION: 0.13.8
+        run: |
+          curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin
+          uv venv --python 3.13 /opt/ansible
+          uv pip install --python /opt/ansible -r ansible/requirements.txt
+          echo "/opt/ansible/bin" >> "$GITHUB_PATH"
+
+      - name: Syntax check every playbook
+        working-directory: ansible
+        run: |
+          ansible-galaxy collection install -r requirements.yml
+          for p in playbooks/*.yml; do ansible-playbook --syntax-check "$p"; done
+
+      - name: ansible-lint (best practices)
+        working-directory: ansible
+        run: ansible-lint playbooks/
+
+      - name: Bootstrap scripts are valid bash
+        run: for s in ansible/bootstrap/*.sh; do bash -n "$s" && echo "ok  $s"; done

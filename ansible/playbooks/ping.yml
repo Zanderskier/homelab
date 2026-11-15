@@ -1,0 +1,19 @@
+---
+# Safe test: changes nothing. Checks Ansible can log in to every host and use sudo.
+- name: Check Ansible can reach every host
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Show what each host is running
+      ansible.builtin.debug:
+        msg: >-
+          {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}
+          | kernel {{ ansible_facts['kernel'] }}
+          | {{ ansible_facts['virtualization_type'] }} {{ ansible_facts['virtualization_role'] }}
+
+    - name: Confirm sudo works
+      ansible.builtin.command: whoami
+      become: true
+      register: whoami_result
+      changed_when: false
+      failed_when: whoami_result.stdout != 'root'

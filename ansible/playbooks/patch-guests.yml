@@ -1,0 +1,48 @@
+---
+# Weekly OS updates for every LXC, VM and Raspberry Pi.
+# One host at a time (serial: 1), and the run stops at the first failure (max_fail_percentage: 0),
+# so a bad update can't spread to every machine at once.
+- name: Patch LXCs, VMs and Raspberry Pis
+  hosts: guests:pis
+  serial: 1
+  max_fail_percentage: 0
+  order: inventory
+  gather_facts: false
+  become: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: a   # Ubuntu: restart services automatically instead of asking
+  tasks:
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+        upgrade: dist
+        autoremove: true
+        autoclean: true
+        dpkg_options: force-confdef,force-confold   # keep my config files if a package ships a new one
+      register: apt_result
+
+    - name: Update Pi-hole itself
+      ansible.builtin.command: pihole -up
+      when: inventory_hostname == 'pihole'
+      register: pihole_result
+      changed_when: "'up to date' not in pihole_result.stdout"
+
+    - name: Check whether a reboot is needed
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_flag
+
+    - name: Reboot (only when the run was started with allow_reboot)
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+      when:
+        - reboot_flag.stat.exists
+        - allow_reboot | bool
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'packages updated' if apt_result is changed else 'already up to date' }}
+          {{- ' | REBOOT NEEDED' if (reboot_flag.stat.exists and not (allow_reboot | bool)) else '' }}

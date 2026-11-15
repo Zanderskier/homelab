@@ -1,0 +1,5 @@
+---
+# Variables every host gets. A run can override them, e.g. -e allow_reboot=true.
+
+# Never reboot unless a run explicitly asks for it.
+allow_reboot: false

@@ -19,9 +19,9 @@ the source of truth: change a file, merge, and the host converges.
 
 ## Network
 
-LAN `192.168.50.0/24`, every address below is a DHCP reservation on the router. Public hostnames
-are on `failsafe.work`, all served through the single Cloudflare tunnel **Skynet-homelab**
-(`7dbb7570-…`), so no ports are forwarded.
+LAN `192.168.50.0/24`, every address below is a DHCP reservation on the router. Remote access goes
+through a single Cloudflare tunnel (outbound only, so no ports are forwarded) or the OpenVPN server
+on the router.
 
 ### Devices
 
@@ -35,9 +35,10 @@ are on `failsafe.work`, all served through the single Cloudflare tunnel **Skynet
 | Proxmox Backup Server | PBS | 192.168.50.76 |
 | Portainer + little-skynet stacks | Portainer-Lsky | 192.168.50.81 |
 | Plex | Video-Captin | 192.168.50.88 |
-| Gitea Actions runner | gitea-runner | 192.168.50.90 |
+| Gitea Actions runner (lint, Renovate) | gitea-runner | 192.168.50.90 |
 | Immich (VM) | Immich | 192.168.50.106 |
 | Gitea | gittea-repo | 192.168.50.124 |
+| Ansible control node | Ansible | 192.168.50.129 |
 | JetKVM #1 | Jet-KVM | 192.168.50.150 |
 | Authentik | Authentik | 192.168.50.151 |
 | Foundry VTT | Foundry-dnd | 192.168.50.159 |
@@ -48,41 +49,35 @@ are on `failsafe.work`, all served through the single Cloudflare tunnel **Skynet
 
 ### Services
 
-| Service | Runs on | Internal URL | Public hostname |
+**Exposure:** *Public* = published through the tunnel for users and their apps. *Admin* = also
+reachable through the tunnel, but the hostname is deliberately not listed here, and the app's own
+login is required. *LAN/VPN* = not exposed at all.
+
+| Service | Runs on | Internal URL | Exposure |
 |---|---|---|---|
-| Portainer | Portainer-Lsky | https://192.168.50.81:9443 | (admin, not published) |
-| Uptime Kuma | Portainer-Lsky | http://192.168.50.81:3001 | (admin, not published) |
-| Paperless-ngx | Portainer-Lsky | http://192.168.50.81:8010 | [paperless.failsafe.work](https://paperless.failsafe.work) |
-| Vaultwarden | Portainer-Lsky | http://192.168.50.81:8123 | [vaultwarden.failsafe.work](https://vaultwarden.failsafe.work) |
-| Mealie | Portainer-Lsky | http://192.168.50.81:9925 | [mealie.failsafe.work](https://mealie.failsafe.work) |
-| Homepage, Tautulli | Portainer-Lsky | 192.168.50.81 | — (LAN only) |
-| Plex | Video-Captin | http://192.168.50.88:32400 | [plex.failsafe.work](https://plex.failsafe.work) |
-| Immich | Immich | http://192.168.50.106:2283 | [immich.failsafe.work](https://immich.failsafe.work) |
-| Gitea | gittea-repo | http://192.168.50.124:3000 | [gitea.failsafe.work](https://gitea.failsafe.work) |
-| Gitea runner | gitea-runner | 192.168.50.90 | — |
-| Authentik | Authentik | http://192.168.50.151:9000 | [authentik.failsafe.work](https://authentik.failsafe.work) |
-| Foundry VTT | Foundry-dnd | http://192.168.50.3:30000 ⚠️ | [dnd.failsafe.work](https://dnd.failsafe.work) |
-| Foundry proxy | Foundry-dnd | http://192.168.50.3:3000 ⚠️ | [dnd-proxy.failsafe.work](https://dnd-proxy.failsafe.work) |
-| Sonarr | Arr-Stack | http://192.168.50.199:8989 | (admin, not published) |
-| Radarr | Arr-Stack | http://192.168.50.199:7878 | (admin, not published) |
-| Prowlarr | Arr-Stack | http://192.168.50.199:9696 | (admin, not published) |
-| SABnzbd | Arr-Stack | http://192.168.50.199:8080 | (admin, not published) |
-| qBittorrent | Arr-Stack | http://192.168.50.199:8888 | (admin, not published) |
-| Overseerr | Arr-Stack | http://192.168.50.199:5055 | [overseerr.failsafe.work](https://overseerr.failsafe.work) |
-| Requestrr | Arr-Stack | http://192.168.50.199:4545 | (admin, not published) |
-| Audiobookshelf | Arr-Stack | http://192.168.50.199:13378 | [audiobookshelf.failsafe.work](https://audiobookshelf.failsafe.work) |
-| File Browser | File-Browser | http://192.168.50.246:8080 | (admin, not published) |
-| Pi-hole | DNS-Skynet | http://192.168.50.2/admin | — |
-| Proxmox VE (skynet) | Skynet | https://192.168.50.8:8006 | — (`skynet.failsafe.work` A record → LAN IP) |
-| Proxmox VE (little-skynet) | Little-Skynet | https://192.168.50.220:8006 | — (`little-skynet.failsafe.work` A record → LAN IP) |
-| Proxmox Backup Server | PBS | https://192.168.50.76:8007 | — |
-| JetKVM | Jet-KVM / Jet-KVM2 | http://192.168.50.150 / .18 | — |
+| Plex | Video-Captin | http://192.168.50.88:32400 | Public |
+| Immich | Immich | http://192.168.50.106:2283 | Public |
+| Vaultwarden | Portainer-Lsky | http://192.168.50.81:8123 | Public |
+| Paperless-ngx | Portainer-Lsky | http://192.168.50.81:8010 | Public |
+| Mealie | Portainer-Lsky | http://192.168.50.81:9925 | Public |
+| Audiobookshelf | Arr-Stack | http://192.168.50.199:13378 | Public |
+| Overseerr | Arr-Stack | http://192.168.50.199:5055 | Public |
+| Gitea | gittea-repo | http://192.168.50.124:3000 | Public |
+| Authentik (SSO) | Authentik | http://192.168.50.151:9000 | Public |
+| Foundry VTT + D&D Beyond proxy | Foundry-dnd | :30000 / :3000 | Public |
+| Portainer | Portainer-Lsky | https://192.168.50.81:9443 | Admin |
+| Uptime Kuma | Portainer-Lsky | http://192.168.50.81:3001 | Admin |
+| Sonarr / Radarr / Prowlarr | Arr-Stack | http://192.168.50.199:8989 / 7878 / 9696 | Admin |
+| SABnzbd / qBittorrent | Arr-Stack | http://192.168.50.199:8080 / 8888 | Admin |
+| Requestrr | Arr-Stack | http://192.168.50.199:4545 | Admin |
+| File Browser | File-Browser | http://192.168.50.246:8080 | Admin |
+| Homepage, Tautulli | Portainer-Lsky | http://192.168.50.81:4000 / 8181 | LAN/VPN |
+| Pi-hole | DNS-Skynet | http://192.168.50.2/admin | LAN/VPN |
+| Proxmox VE | Skynet / Little-Skynet | https://192.168.50.8:8006 / .220:8006 | LAN/VPN |
+| Proxmox Backup Server | PBS | https://192.168.50.76:8007 | LAN/VPN |
+| JetKVM (out-of-band) | Jet-KVM / Jet-KVM2 | http://192.168.50.150 / .18 | LAN/VPN |
 
-⚠️ The tunnel routes `dnd` and `dnd-proxy` to `192.168.50.3`, but the Foundry-dnd reservation is
-`192.168.50.159`. One of the two needs updating.
-
-**Stale DNS records** (point at tunnels that no longer exist, safe to delete): `failsafe.work`
-(apex, tunnel `5176bf9c-…`) and `(admin hostname, not published)` (tunnel `1385d5a8-…`).
+Every admin app was verified to reject unauthenticated requests through the tunnel (401/403).
 
 ## Layout
 
@@ -94,9 +89,11 @@ stacks/
     arr-stack/  audiobookshelf/  foundry-vtt/  gitea-runner/  qbittorrent/
   little-skynet/
     homepage/  mealie/  paperless-ngx/  tautulli/  uptime-kuma/  vaultwarden/
+ansible/          OS updates for every machine, run from the Ansible LXC (see ansible/README.md)
 .gitea/workflows/
-  lint.yml        validates every compose file, blocks :latest tags and committed secrets
+  lint.yml        validates compose files + playbooks, blocks :latest tags and committed secrets
   renovate.yml    runs Renovate every 4 hours
+  ansible.yml     weekly OS patching (Sunday 03:00), or any playbook on demand
 renovate.json     update policy: what auto-merges and what waits for review
 docs/
   ci-cd.md        how updates flow from a new release to a running container
@@ -138,8 +135,10 @@ Gitea, Authentik, Immich (VM), File Browser, Plex (helper-script LXC), Pi-hole, 
 - [x] Single Cloudflare tunnel with published application routes for every hostname
 - [x] Delete old tunnels; every exposed admin app verified to require login
 - [x] Pin every image to an exact version
-- [ ] Renovate + Gitea Actions: update PRs, CI lint, tiered auto-merge ([docs/ci-cd.md](docs/ci-cd.md))
-- [ ] Ansible: OS patching for all LXCs/VMs/Pis, Proxmox/PBS updates, Immich, Portainer
+- [x] Renovate + Gitea Actions: update PRs, CI lint, tiered auto-merge ([docs/ci-cd.md](docs/ci-cd.md))
+- [ ] Ansible: OS patching for all LXCs/VMs/Pis + Proxmox/PBS ([ansible/README.md](ansible/README.md))
+- [ ] Ansible: Immich deploys and updates from this repo
+- [ ] Ansible: Portainer server/agent updates
 - [ ] Monitoring and alerting (metrics, SMART, backup failures → ntfy)
 - [ ] Managed switch + VLANs (mgmt / servers / trusted / IoT / guest)
 - [ ] UPS, offsite backups (budget permitting)
