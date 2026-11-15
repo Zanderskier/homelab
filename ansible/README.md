@@ -33,7 +33,7 @@ ansible/
 
 | Trigger | Playbook | Reboots? |
 |---|---|---|
-| Every Sunday 03:00 Pacific | `patch-guests` | No. The summary says `REBOOT NEEDED` where one is due |
+| Every Sunday 04:30 Pacific (05:30 in summer), after the PBS backups | `patch-guests` | No. The summary says `REBOOT NEEDED` where one is due |
 | Actions → ansible → **Run workflow** | your choice | Only if you tick *allow_reboot* (guests only) |
 
 ## One-time setup

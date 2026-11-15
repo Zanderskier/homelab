@@ -1,13 +1,15 @@
 # Runs Ansible on the Ansible LXC (skynet), via the runner registered there with the "ansible" label.
 # Steps run directly on that LXC (host mode), where the Ansible SSH key lives. The key is never
 # stored in Gitea.
-#   - Every Sunday 03:00 Pacific: patch-guests (OS updates for LXCs, VMs, Pis; no reboots)
+#   - Every Sunday 04:30 Pacific (05:30 in summer): patch-guests (OS updates for LXCs, VMs, Pis; no reboots)
 #   - Any time, by hand: Actions tab > ansible > Run workflow > pick a playbook
 name: ansible
 
 on:
   schedule:
-    - cron: "0 11 * * 0"   # 11:00 UTC Sunday = 03:00 PST / 04:00 PDT
+    # Cron is UTC. 12:30 UTC = 04:30 PST / 05:30 PDT: always after the nightly PBS backups
+    # (skynet 03:00, little-skynet 03:30), so every patch run has a fresh backup to roll back to.
+    - cron: "30 12 * * 0"
   workflow_dispatch:
     inputs:
       playbook:

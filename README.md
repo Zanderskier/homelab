@@ -93,7 +93,7 @@ ansible/          OS updates for every machine, run from the Ansible LXC (see an
 .gitea/workflows/
   lint.yml        validates compose files + playbooks, blocks :latest tags and committed secrets
   renovate.yml    runs Renovate every 4 hours
-  ansible.yml     weekly OS patching (Sunday 03:00), or any playbook on demand
+  ansible.yml     weekly OS patching (Sunday 04:30, after backups), or any playbook on demand
 renovate.json     update policy: what auto-merges and what waits for review
 docs/
   ci-cd.md        how updates flow from a new release to a running container
