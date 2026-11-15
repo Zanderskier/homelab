@@ -3,3 +3,10 @@
 
 # Never reboot unless a run explicitly asks for it.
 allow_reboot: false
+
+# Where the break-glass account may log in with a password (harden-ssh.yml). Everything else is
+# key-only. 10.8.0.0/24 is the ASUS OpenVPN server's default client subnet: check yours under
+# VPN > OpenVPN on the router.
+breakglass_allowed_from:
+  - 192.168.50.0/24
+  - 10.8.0.0/24

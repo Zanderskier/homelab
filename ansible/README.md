@@ -109,6 +109,60 @@ git clone http://192.168.50.124:3000/alex/homelab.git && cd homelab/ansible   # 
 
 The venv exists after the first workflow run.
 
+## Admin user and SSH hardening
+
+Two playbooks replace "log in as root everywhere":
+
+| Playbook | What it does |
+|---|---|
+| `users` | Creates **`alex`** (SSH key login from `files/alex.pub`) and a **break-glass** account (password only) on every machine. Both get full root rights through `sudo`, which asks for their password |
+| `harden-ssh` | Turns off SSH logins **as root** and **with passwords**, except for the break-glass account from the LAN/VPN. Refuses to run on a host where alex has no key |
+
+Accounts after this:
+
+| Account | Logs in with | From | Can do |
+|---|---|---|---|
+| `alex` (me, daily) | my SSH key | anywhere SSH is reachable | anything, via `sudo` + password |
+| break-glass (name in Vaultwarden) | **password** (Vaultwarden) | **LAN `192.168.50.0/24` and VPN `10.8.0.0/24` only** | anything, via `sudo` + password |
+| `ansible` (automation) | the control node's key | 192.168.50.129 only | anything, via `sudo` without a password |
+| `root` | console only (Proxmox shell, `pct enter`, VM console, JetKVM) | — | last resort |
+
+The break-glass account is for logging in from a machine that doesn't have my key: a new laptop,
+a friend's PC over the VPN. Its **name is not in this repo** either, so the public repo doesn't say
+which account accepts passwords. The VPN subnet is in `inventory/group_vars/all.yml`. Check it
+matches the router (VPN → OpenVPN).
+
+### Secrets (Ansible LXC only, never in Git)
+
+```bash
+# On the Ansible LXC
+sudo -iu runner
+openssl passwd -6       # run twice: once for alex's sudo password, once for break-glass
+nano /ansible_config/secrets.yml
+chmod 600 /ansible_config/secrets.yml
+```
+
+`/ansible_config/secrets.yml`:
+
+```yaml
+alex_password_hash: '$6$...'          # alex's sudo password
+breakglass_user: 'pick-a-name'        # not "admin"/"breakglass": something not guessable
+breakglass_password_hash: '$6$...'    # a different, long password (generate it in Vaultwarden)
+```
+
+Keep the single quotes: the hashes contain `$`. Store both passwords and the break-glass name in
+Vaultwarden. The workflow loads this file automatically, and `users` refuses to run if anything is
+missing or both passwords are the same.
+
+### Order (don't skip the testing)
+
+1. Run `users` with **check_mode**, then for real.
+2. From the PC, on a few hosts: `ssh alex@192.168.50.81`, then `sudo -v`. Both must work.
+3. Run `harden-ssh` with **limit** set to one host, then test `ssh alex@` and confirm `ssh root@` is
+   refused.
+4. Run `harden-ssh` on everything, with the Pis last (`limit: pis`). They have no web console, so
+   a mistake there means plugging in a keyboard and monitor.
+
 ## Adding a machine
 
 1. Run `bootstrap-ssh.sh self` on it (or `lxcs` on its Proxmox host).

@@ -1,0 +1,57 @@
+---
+# Admin accounts on every machine, so I never need to log in as root.
+#   - "alex": my daily account. SSH key login only (ansible/files/alex.pub), root via sudo + password
+#   - break-glass: a password-only account for when I'm on a machine without my key. Its name and
+#     password live in Vaultwarden and in secrets.yml, not in Git. harden-ssh.yml lets it use a
+#     password only from the LAN/VPN.
+# Password hashes and the break-glass name come from /ansible_config/secrets.yml on the Ansible LXC.
+- name: Admin user accounts
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    admin_user: alex
+    admin_keys_file: "{{ playbook_dir }}/../files/alex.pub"
+  pre_tasks:
+    - name: Check secrets.yml provided everything
+      ansible.builtin.assert:
+        that:
+          - alex_password_hash is defined and alex_password_hash is match('^\$6\$')
+          - breakglass_user is defined and breakglass_user is match('^[a-z_][a-z0-9_-]*$')
+          - breakglass_user not in ['root', 'alex', 'ansible']
+          - breakglass_password_hash is defined and breakglass_password_hash is match('^\$6\$')
+          - breakglass_password_hash != alex_password_hash
+        fail_msg: >-
+          /ansible_config/secrets.yml on the Ansible LXC is missing or incomplete. It needs
+          alex_password_hash, breakglass_user and breakglass_password_hash (a different password).
+          See ansible/README.md, "Admin user and SSH hardening".
+        quiet: true
+      run_once: true
+
+  tasks:
+    - name: Create the admin user and add it to the sudo group
+      ansible.builtin.user:
+        name: "{{ admin_user }}"
+        comment: Alex (admin)
+        shell: /bin/bash
+        groups: sudo
+        append: true
+        password: "{{ alex_password_hash }}"
+        update_password: always
+
+    - name: Authorize my SSH keys (the file in the repo is the full list)
+      ansible.posix.authorized_key:
+        user: "{{ admin_user }}"
+        key: "{{ lookup('ansible.builtin.file', admin_keys_file) }}"
+        exclusive: true
+
+    - name: Create the break-glass user (password only, root via sudo + password)
+      ansible.builtin.user:
+        name: "{{ breakglass_user }}"
+        comment: Break-glass admin (password in Vaultwarden)
+        shell: /bin/bash
+        groups: sudo
+        append: true
+        password: "{{ breakglass_password_hash }}"
+        update_password: always
+      no_log: true   # keep the account name out of the job log too
