@@ -8,7 +8,7 @@
 # can't be committed because it holds secrets.
 services:
   vaultwarden:
-    image: vaultwarden/server:latest
+    image: docker.io/vaultwarden/server:1.37.5
     container_name: vaultwarden
     volumes:
       - /main/vaultwarden:/data/

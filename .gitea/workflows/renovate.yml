@@ -1,0 +1,26 @@
+# Renovate: checks every image in stacks/ for new versions and opens one PR per update.
+# Low-risk stacks auto-merge once lint passes (see renovate.json); Portainer GitOps then redeploys.
+name: renovate
+
+on:
+  schedule:
+    - cron: "17 */4 * * *"   # every 4 hours (UTC); the odd minute avoids the top-of-hour rush
+  workflow_dispatch: {}       # "Run workflow" button in the Actions tab
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    container: ghcr.io/renovatebot/renovate:44.239.1
+    steps:
+      - name: Run Renovate
+        run: renovate
+        env:
+          RENOVATE_PLATFORM: gitea
+          # Internal Gitea URL: no dependency on Cloudflare, and git clones use it too (gitUrl=endpoint).
+          RENOVATE_ENDPOINT: http://192.168.50.124:3000/api/v1
+          RENOVATE_GIT_URL: endpoint
+          RENOVATE_REPOSITORIES: ${{ gitea.repository }}
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+          # Optional: a read-only GitHub token avoids rate limits and adds release notes to PRs.
+          RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
+          LOG_LEVEL: info

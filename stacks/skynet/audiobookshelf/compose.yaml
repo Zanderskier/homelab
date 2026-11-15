@@ -1,8 +1,7 @@
 services:
   audiobookshelf:
-    image: ghcr.io/advplyr/audiobookshelf:latest
+    image: ghcr.io/advplyr/audiobookshelf:2.37.2
     container_name: audiobookshelf
-    pull_policy: always   # remove once Renovate pins versions (see README roadmap)
     ports:
       - "13378:80"
     volumes:

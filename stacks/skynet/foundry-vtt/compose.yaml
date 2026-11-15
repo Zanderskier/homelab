@@ -1,7 +1,7 @@
 # All container options: https://github.com/felddy/foundryvtt-docker#environment-variables
 services:
   foundry:
-    image: ghcr.io/felddy/foundryvtt:release
+    image: ghcr.io/felddy/foundryvtt:14.370.0
     container_name: foundry
     hostname: failsafe-dnd
     volumes:
@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
 
   ddb-proxy:
-    image: ghcr.io/mrprimate/ddb-proxy:latest
+    image: ghcr.io/mrprimate/ddb-proxy:7.0.26
     container_name: ddb-proxy
     ports:
       - "3000:3000"

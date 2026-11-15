@@ -25,13 +25,13 @@
 # documentation.
 services:
   broker:
-    image: docker.io/library/redis:8
+    image: docker.io/library/redis:8.10.3
     restart: always
     volumes:
       - /main/paperless-ngx/redisdata:/data
 
   db:
-    image: docker.io/library/postgres:18
+    image: docker.io/library/postgres:18.7
     restart: always
     volumes:
       - /main/paperless-ngx/pgdata:/var/lib/postgresql
@@ -41,7 +41,7 @@ services:
       POSTGRES_PASSWORD: ${PAPERLESS_DB_PASSWORD:?set PAPERLESS_DB_PASSWORD in Portainer}
 
   webserver:
-    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    image: ghcr.io/paperless-ngx/paperless-ngx:3.4.2
     restart: always
     depends_on:
       - db
@@ -87,7 +87,7 @@ services:
       PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS: ${PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS:-true}
 
   gotenberg:
-    image: gotenberg/gotenberg:8
+    image: docker.io/gotenberg/gotenberg:8.40.0
     restart: always
     command:
       - "gotenberg"
@@ -95,7 +95,7 @@ services:
       - "--chromium-allow-list=file:///tmp/.*"
 
   tika:
-    image: apache/tika:latest
+    image: docker.io/apache/tika:4.2.0
     restart: always
 
 volumes:

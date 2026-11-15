@@ -5,7 +5,7 @@
 # containers as replicas of one tunnel, so public access survives either host being down.
 services:
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: docker.io/cloudflare/cloudflared:2026.11.0
     container_name: cloudflared
     command: tunnel --no-autoupdate run
     environment:

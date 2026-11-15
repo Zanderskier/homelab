@@ -24,10 +24,15 @@ stacks/
   shared/        stacks deployed on more than one host
     cloudflared/   single Cloudflare tunnel, one replica per host
   skynet/
-    arr-stack/  audiobookshelf/  foundry-vtt/  qbittorrent/
+    arr-stack/  audiobookshelf/  foundry-vtt/  gitea-runner/  qbittorrent/
   little-skynet/
     homepage/  mealie/  paperless-ngx/  tautulli/  uptime-kuma/  vaultwarden/
+.gitea/workflows/
+  lint.yml        validates every compose file, blocks :latest tags and committed secrets
+  renovate.yml    runs Renovate every 4 hours
+renovate.json     update policy: what auto-merges and what waits for review
 docs/
+  ci-cd.md        how updates flow from a new release to a running container
   cloudflare.md   tunnel + Zero Trust Access design and migration
   migration.md    moving Portainer from the old per-app repos to this repo
   secrets.md      where secrets live and how to rotate them
@@ -64,9 +69,9 @@ Gitea, Authentik, Immich (VM), File Browser, Plex (helper-script LXC), Pi-hole, 
 
 - [x] Merge per-app repos into one repo; remove secrets from compose files
 - [x] Single Cloudflare tunnel with published application routes for every hostname
-- [ ] Delete old tunnels; Zero Trust Access on admin UIs ([docs/cloudflare.md](docs/cloudflare.md))
-- [ ] Renovate: pin image versions, PRs for updates, auto-merge low-risk apps
-- [ ] Gitea Actions: lint compose/YAML on every PR
+- [x] Delete old tunnels; every exposed admin app verified to require login
+- [x] Pin every image to an exact version
+- [ ] Renovate + Gitea Actions: update PRs, CI lint, tiered auto-merge ([docs/ci-cd.md](docs/ci-cd.md))
 - [ ] Ansible: OS patching for all LXCs/VMs/Pis, Proxmox/PBS updates, Immich, Portainer
 - [ ] Monitoring and alerting (metrics, SMART, backup failures → ntfy)
 - [ ] Managed switch + VLANs (mgmt / servers / trusted / IoT / guest)

@@ -1,6 +1,6 @@
 services:
   pia-qbittorrent:
-      image: j4ym0/pia-qbittorrent:5.2.4-ubuntu
+      image: docker.io/j4ym0/pia-qbittorrent:5.2.4-ubuntu
       container_name: pia-qbittorrent
       cap_add:
           - NET_ADMIN
@@ -18,12 +18,11 @@ services:
       ports:
           - "8888:8888"
       restart: always
-      pull_policy: always
 
   # Sidecar that keeps the tracker's dynamic seedbox IP in sync with the PIA VPN IP.
   # It shares pia-qbittorrent's network namespace, so its requests leave through the VPN tunnel.
   seedbox-ip-sync:
-      image: curlimages/curl:latest
+      image: docker.io/curlimages/curl:8.23.0
       container_name: seedbox-ip-sync
       network_mode: "service:pia-qbittorrent"
       depends_on:
@@ -35,7 +34,6 @@ services:
       volumes:
           - /mnt/media-storage/arr-stack/qbittorrent/seedbox:/data
       restart: unless-stopped
-      pull_policy: always
       entrypoint: ["/bin/sh", "-c"]
       command:
           - |

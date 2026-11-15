@@ -1,0 +1,68 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "America/Los_Angeles",
+  "dependencyDashboard": true,
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 15,
+  "gitAuthor": "Renovate Bot <renovate-bot@noreply.failsafe.work>",
+  "github-actions": {
+    "managerFilePatterns": ["/(^|/)\\.gitea/workflows/[^/]+\\.ya?ml$/"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Tool versions in workflows, marked with a '# renovate:' comment on the line above",
+      "managerFilePatterns": ["/(^|/)\\.gitea/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+[A-Z_]+:\\s*(?<currentValue>\\S+)"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "linuxserver.io tags look like 4.0.20.3014-ls5 / v1.6.2-ls372: app version plus image build number",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["/^lscr\\.io/linuxserver//"],
+      "versioning": "regex:^[vV]?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?:\\.(?<build>\\d+))?-ls(?<revision>\\d+)$"
+    },
+    {
+      "description": "linuxserver restarted sonarr's build numbers at ls1, so the older ls3xx builds of 4.0.20.3014 look 'newer'. Remove after sonarr 4.0.21",
+      "matchPackageNames": ["lscr.io/linuxserver/sonarr"],
+      "allowedVersions": "!/^4\\.0\\.20\\.3014-ls\\d{3}$/"
+    },
+    {
+      "description": "Database major versions need a dump/restore or pg_upgrade, never an image bump",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["/(^|/)postgres$/", "/(^|/)redis$/"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "One PR for the whole *arr stack, so it redeploys once",
+      "matchFileNames": ["stacks/skynet/arr-stack/**"],
+      "groupName": "arr-stack"
+    },
+    {
+      "description": "Low-risk stacks: minor/patch updates merge automatically once CI passes and the release is 3 days old",
+      "matchFileNames": [
+        "stacks/shared/cloudflared/**",
+        "stacks/little-skynet/homepage/**",
+        "stacks/little-skynet/tautulli/**",
+        "stacks/little-skynet/uptime-kuma/**",
+        "stacks/skynet/arr-stack/**",
+        "stacks/skynet/audiobookshelf/**",
+        "stacks/skynet/gitea-runner/**"
+      ],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "minimumReleaseAge": "3 days",
+      "automerge": true
+    },
+    {
+      "description": "CI tooling (workflow actions, docker compose, Renovate itself) auto-merges on minor/patch",
+      "matchFileNames": [".gitea/workflows/**"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    }
+  ]
+}

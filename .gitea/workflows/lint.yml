@@ -1,0 +1,55 @@
+# Runs on every PR (including Renovate's) and every push to main.
+# Branch protection on main requires this to pass before a PR can merge.
+name: lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install docker compose
+        env:
+          # renovate: datasource=github-releases depName=docker/compose
+          COMPOSE_VERSION: v5.7.1
+        run: |
+          curl -fsSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-x86_64" \
+            -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+          docker-compose version
+
+      - name: Validate every compose file
+        run: |
+          status=0
+          for f in $(find stacks -name compose.yaml | sort); do
+            # Secrets only exist in Portainer. Give every ${VAR} a dummy value so required (:?) vars pass.
+            vars=$(grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*' "$f" | cut -c3- | sort -u)
+            if env $(for v in $vars; do printf '%s=ci ' "$v"; done) docker-compose -f "$f" config -q; then
+              echo "ok    $f"
+            else
+              echo "FAIL  $f"; status=1
+            fi
+          done
+          exit $status
+
+      - name: Every image pinned to a version
+        run: |
+          if grep -rnE '^\s*image:\s*\S+:(latest|release)\s*$|^\s*image:\s*[^:@[:space:]]+\s*$' stacks; then
+            echo "::error::Pin these images to a version tag so Renovate can track them."
+            exit 1
+          fi
+
+      - name: No secrets committed
+        run: |
+          # Cloudflare tunnel tokens / JWTs, private keys, env files
+          if grep -rnE 'eyJ[A-Za-z0-9_-]{40,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' --exclude-dir=.git . ; then
+            echo "::error::Possible secret committed."; exit 1
+          fi
+          if git ls-files | grep -E '(^|/)(\.env|stack\.env)$'; then
+            echo "::error::Env file committed."; exit 1
+          fi
