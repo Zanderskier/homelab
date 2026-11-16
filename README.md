@@ -36,41 +36,39 @@ that are actually restored.
 
 ## Architecture
 
+### How traffic gets in
+
+No ports are open on the router. Public apps arrive through an outbound Cloudflare Tunnel, and
+everything administrative needs the VPN.
+
 ```mermaid
-flowchart LR
-    subgraph Internet
-        U[Users and apps]
-        GH[GitHub mirror]
-    end
-    CF[Cloudflare Tunnel]
-    VPN[OpenVPN on router]
+flowchart TB
+    U["Users and mobile apps"] --> CF["Cloudflare Tunnel"]
+    A["Me, remotely"] --> VPN["OpenVPN on the router"]
 
-    subgraph LAN["Home LAN, no inbound ports"]
-        subgraph skynet["skynet · Proxmox VE"]
-            G[Gitea]
-            RD[Docker runner<br/>lint + Renovate]
-            AN[Ansible control node<br/>host-mode runner]
-            MEDIA[Plex, *arr, Authentik, ...]
-        end
-        subgraph lsky["little-skynet · Proxmox VE"]
-            P[Portainer]
-            APPS[Vaultwarden, Paperless,<br/>Mealie, Uptime Kuma, ...]
-            IM[Immich VM]
-            CFD[cloudflared]
-        end
-        PBS[Proxmox Backup Server]
-        PI[Pi-hole + Unbound]
-    end
+    CF --> CFD["cloudflared"]
+    CFD --> PUB["Public apps<br/>Immich · Vaultwarden · Plex · Paperless · Mealie"]
+    CFD -. "login required, verified 401/403" .-> ADM["Admin UIs<br/>Portainer · *arr · Uptime Kuma"]
+    VPN --> LAN["Everything on the LAN<br/>Proxmox · PBS · SSH · Pi-hole"]
+```
 
-    U --> CF --> CFD --> APPS & IM & MEDIA
-    VPN -.admin.-> LAN
-    G -- mirror --> GH
-    RD -- Renovate PRs --> G
-    G -- jobs --> RD & AN
-    P -- polls main --> G
-    P -- deploys --> APPS & MEDIA
-    AN -- SSH --> skynet & lsky & PBS & PI
-    PBS -. nightly backups .-> skynet & lsky
+### How changes get deployed
+
+Every change starts as a commit in Gitea. Runners and Portainer pull work from it.
+
+```mermaid
+flowchart TB
+    R["Renovate<br/>(every 4 hours)"] -- "update PRs" --> G["Gitea repo<br/>(this repo)"]
+    ME["Me"] -- "commits, reviews, merges" --> G
+    G -- "every PR and push" --> CI["Docker runner<br/>lint · pin check · secret scan"]
+    G -- "polls main" --> P["Portainer"]
+    G -- "schedule, push, or button" --> AN["Ansible control node"]
+    G -- "push mirror" --> GH["GitHub"]
+
+    P --> DS["Docker stacks<br/>on both Proxmox hosts"]
+    AN -- "SSH as ansible" --> H["16 hosts<br/>patching · users · SSH hardening"]
+    AN -- "dump DB, deploy, verify" --> IM["Immich VM"]
+    PBS["Proxmox Backup Server"] -. "nightly, before patching" .-> DS
 ```
 
 ### How a change reaches production
