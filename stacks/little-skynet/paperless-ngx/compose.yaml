@@ -87,7 +87,7 @@ services:
       PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS: ${PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS:-true}
 
   gotenberg:
-    image: docker.io/gotenberg/gotenberg:9.5.1
+    image: docker.io/gotenberg/gotenberg:9.6.0
     restart: always
     command:
       - "gotenberg"
