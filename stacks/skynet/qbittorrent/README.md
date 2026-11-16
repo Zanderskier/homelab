@@ -1,18 +1,25 @@
-# qBittorrent (PIA VPN) + tracker dynamic seedbox
+# qBittorrent behind a VPN
 
-qBittorrent is a lightweight, open-source BitTorrent client used to manage and automate peer-to-peer file transfers. Provides a web-based management interface, torrent queueing, bandwidth controls, download scheduling, RSS feed support, and remote access. Integrates with media automation tools such as Sonarr and Radarr to handle automated downloads and file acquisition within a self-hosted media environment.
+qBittorrent runs inside the `j4ym0/pia-qbittorrent` image, which connects to Private Internet Access
+(PIA) with port forwarding before qBittorrent starts. All of its traffic leaves through the VPN. It's
+the download client for the *arr apps on the same host.
+
+## seedbox-ip-sync sidecar
+
+A private tracker accepts seeding only from IPs registered to the account. The VPN's exit IP
+changes, so a small `curl` sidecar shares the VPN container's network and calls the tracker's
+"dynamic seedbox" endpoint on start and every `SEEDBOX_SYNC_INTERVAL` seconds. Because it uses the
+VPN's network namespace, the tracker sees the VPN IP, not the home IP.
+
+The tracker rotates the session after first use. The sidecar saves the rotated cookie in
+`/mnt/media-storage/arr-stack/qbittorrent/seedbox/session.cookies`, and only falls back to
+`SEEDBOX_SESSION_COOKIE` when the saved one is rejected. To replace the session, update the variable
+in Portainer, delete that file, and redeploy. Results are in the `seedbox-ip-sync` logs.
+
 ## Deployment (Portainer Git stack)
 
-1. Portainer -> Stacks -> Add stack -> **Repository**
-   - URL: the `homelab` repo
-   - Reference: `refs/heads/main`, compose path: `stacks/skynet/qbittorrent/compose.yaml`
-2. Add environment variables (see `.env.example`): `PIA_USER`, `PIA_PASSWORD`, `PIA_REGION`, `SEEDBOX_SESSION_COOKIE`, optional `SEEDBOX_SYNC_INTERVAL`.
-3. Deploy. Secrets live only in Portainer, never in this repo.
-
-### the tracker dynamic seedbox
-
-The `seedbox-ip-sync` sidecar shares the VPN container's network and calls tracker's
-`dynamicSeedbox.php` on start and every `SEEDBOX_SYNC_INTERVAL` seconds, so tracker always has the current
-PIA exit IP. tracker rotates the token after first use; the rotated cookie is persisted at
-`/mnt/media-storage/arr-stack/qbittorrent/seedbox/session.cookies`. To replace the token, update
-`SEEDBOX_SESSION_COOKIE` in Portainer, delete that cookie file, and redeploy. Check `seedbox-ip-sync` logs for results.
+1. Portainer → Stacks → Add stack → **Repository**, compose path
+   `stacks/skynet/qbittorrent/compose.yaml`.
+2. Environment variables: everything in `.env.example`.
+3. The image version is **locked on purpose** (Renovate ignores it, see `renovate.json`). Change
+   the tag by hand after checking the release.

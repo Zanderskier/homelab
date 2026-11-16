@@ -1,29 +1,153 @@
-# homelab
+# Skynet Homelab
 
-Infrastructure-as-code for my homelab: every Docker stack, and (soon) the Ansible that patches the
-hosts, lives in this one repo. Portainer deploys stacks straight from Git (GitOps), so the repo is
-the source of truth: change a file, merge, and the host converges.
+Infrastructure-as-code for a two-node Proxmox homelab that runs ~25 self-hosted services for my
+household: photos, passwords, documents, media, and the tooling to run it all. Every Docker stack,
+every host's OS configuration, and every update decision lives in this repo. **Hosts converge on
+`main`: nothing is changed on a server by hand.**
+
+I built this to learn, and to practice the way production infrastructure is run: GitOps, automated
+dependency updates with review gates, configuration management, least-privilege access, and backups
+that are actually restored.
+
+## Highlights
+
+- **GitOps deployments.** Portainer redeploys Docker stacks from `main`. Ansible deploys the one
+  VM-based app (Immich) and manages the OS on every host.
+- **Automated, reviewable updates.** Every image is pinned, and Renovate turns each upstream
+  release into a pull request.
+  - Low-risk apps **auto-merge** once CI passes and the release is 3 days old.
+  - Stateful apps wait for review. Immich upgrades take a **database dump**, deploy, and then
+    **verify the running version** through the app's API.
+- **Fleet patching with Ansible.** 16 hosts (Proxmox VE/PBS, LXCs, a VM, Raspberry Pis) are
+  patched weekly, after the nightly backups. Hosts go one at a time, and the run stops at the first
+  failure.
+- **SSH hardening across the fleet.**
+  - No root logins and no password logins: keys only, served from a password manager's SSH agent.
+  - A break-glass account that works only from the LAN or VPN.
+  - Rolled out with automated config checks, simulated logins (`sshd -T -C`) and **automatic
+    rollback**.
+- **No open inbound ports.** Public apps go through one Cloudflare Tunnel (consolidated from 22).
+  Admin UIs are tested to reject unauthenticated access; everything else is VPN-only.
+- **CI on every change.** Each compose file is validated, `:latest` tags are rejected, playbooks are
+  syntax-checked and linted, and committed secrets fail the build.
+- **Secrets stay out of Git.** Portainer variables, a mode-600 file on the Ansible control node,
+  and a password manager. The repo's history was rewritten to remove personal data before
+  publishing.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Internet
+        U[Users and apps]
+        GH[GitHub mirror]
+    end
+    CF[Cloudflare Tunnel]
+    VPN[OpenVPN on router]
+
+    subgraph LAN["Home LAN, no inbound ports"]
+        subgraph skynet["skynet · Proxmox VE"]
+            G[Gitea]
+            RD[Docker runner<br/>lint + Renovate]
+            AN[Ansible control node<br/>host-mode runner]
+            MEDIA[Plex, *arr, Authentik, ...]
+        end
+        subgraph lsky["little-skynet · Proxmox VE"]
+            P[Portainer]
+            APPS[Vaultwarden, Paperless,<br/>Mealie, Uptime Kuma, ...]
+            IM[Immich VM]
+            CFD[cloudflared]
+        end
+        PBS[Proxmox Backup Server]
+        PI[Pi-hole + Unbound]
+    end
+
+    U --> CF --> CFD --> APPS & IM & MEDIA
+    VPN -.admin.-> LAN
+    G -- mirror --> GH
+    RD -- Renovate PRs --> G
+    G -- jobs --> RD & AN
+    P -- polls main --> G
+    P -- deploys --> APPS & MEDIA
+    AN -- SSH --> skynet & lsky & PBS & PI
+    PBS -. nightly backups .-> skynet & lsky
+```
+
+### How a change reaches production
+
+```
+upstream release ─► Renovate PR ─► CI (compose valid, pinned, no secrets, playbooks lint)
+                                     │
+                     low-risk app ───┴─── stateful app / major version
+                     auto-merge            review the release notes, merge
+                          │                       │
+                          ▼                       ▼
+              Portainer redeploys        Portainer redeploys, or for Immich:
+              within 5 minutes           Ansible dumps the DB → deploys → checks health + version
+```
+
+More detail: **[docs/architecture.md](docs/architecture.md)** (design and decisions) ·
+[docs/ci-cd.md](docs/ci-cd.md) · [ansible/README.md](ansible/README.md) ·
+[docs/secrets.md](docs/secrets.md)
+
+## Tech
+
+| Area | Tools |
+|---|---|
+| Virtualization | Proxmox VE 9 (LXC + KVM), Proxmox Backup Server, virtiofs |
+| Containers | Docker, Docker Compose, Portainer (GitOps Git stacks) |
+| CI/CD | Gitea, Gitea Actions (Docker + host-mode runners), Renovate |
+| Configuration management | Ansible (ansible-core 2.22, ansible-lint), uv |
+| Networking | Cloudflare Tunnel, OpenVPN, Pi-hole + Unbound (recursive DNS), DHCP reservations |
+| Identity and secrets | Authentik (OIDC SSO), Vaultwarden (incl. SSH agent), OpenSSH hardening |
+| Out-of-band | JetKVM on both Proxmox hosts |
 
 ## Hardware
 
 | Host | Hardware | Role |
 |---|---|---|
-| **skynet** | Dell Precision 5810, 14C/28T, 64 GB ECC, Quadro P2200, 16 TB media HDD, 3x 2 TB NVMe | Proxmox VE 9: media (Plex, *arr), Gitea, Authentik, Foundry |
-| **little-skynet** | Dell OptiPlex 7050, 16 GB, 4 TB HDD, 2 TB NVMe (Immich) | Proxmox VE 9: Portainer (control plane), household apps, Immich, cloudflared |
-| **pbs** | Toshiba Qosmio (2013), 4C/8T, 12 GB, 4 TB USB HDD | Proxmox Backup Server for all LXCs/VMs |
-| **pi2** | Raspberry Pi 2 | Pi-hole + Unbound (recursive DNS, ad blocking) |
-| **pi4** | Raspberry Pi 4, 2 TB SSD | Critical-data backup target |
-| — | 8 TB HDD dock on little-skynet | Critical-data backup target |
-| — | 2x JetKVM | Out-of-band console for both Proxmox hosts |
-| — | ASUS RT-AX1800S | Router, DHCP reservations, OpenVPN remote access |
+| **skynet** | Dell Precision 5810, 14C/28T, 64 GB ECC, Quadro P2200, 16 TB HDD, 3× 2 TB NVMe | Proxmox VE: media, Gitea, Authentik, CI runners, Ansible |
+| **little-skynet** | Dell OptiPlex 7050, 16 GB, 4 TB HDD, 2 TB NVMe | Proxmox VE: Portainer, household apps, Immich VM, cloudflared |
+| **pbs** | Toshiba Qosmio (2013), 12 GB, 4 TB USB HDD | Proxmox Backup Server |
+| **pi2 / pi4** | Raspberry Pi 2 / Raspberry Pi 4 + 2 TB SSD | DNS (Pi-hole + Unbound) / critical-data backups |
+| — | 2× JetKVM, ASUS RT-AX1800S | Out-of-band console / router, DHCP, OpenVPN |
 
-## Network
+## Repository layout
 
-LAN `192.168.50.0/24`, every address below is a DHCP reservation on the router. Remote access goes
-through a single Cloudflare tunnel (outbound only, so no ports are forwarded) or the OpenVPN server
-on the router.
+```
+stacks/<host>/<app>/compose.yaml   one Docker stack each (+ .env.example listing its secrets)
+stacks/shared/cloudflared/         the Cloudflare tunnel connector
+stacks/little-skynet/immich/       deployed by Ansible, not Portainer
+ansible/                           inventory, playbooks, bootstrap scripts (see ansible/README.md)
+  playbooks/  ping · patch-guests · patch-hosts · users · harden-ssh · immich
+.gitea/workflows/
+  lint.yml        compose validation, pin check, secret scan, ansible syntax + lint
+  renovate.yml    Renovate every 4 hours
+  ansible.yml     weekly patching, Immich deploys, any playbook on demand
+renovate.json     update policy: what auto-merges, what waits for review, what's locked
+docs/             architecture, CI/CD, secrets
+```
 
-### Devices
+## Operations reference
+
+### Deploying a Docker stack (Portainer GitOps)
+
+1. Portainer → environment (host) → **Stacks → Add stack → Repository**, using the internal Gitea
+   URL and a read-only Gitea token.
+2. Reference `refs/heads/main`, compose path `stacks/<host>/<app>/compose.yaml`.
+3. Environment variables: everything in that stack's `.env.example`.
+4. **GitOps updates → Polling** (5 min). Merging to `main` redeploys.
+
+Conventions:
+- **Secrets:** come in through `${VAR}` (`${VAR:?msg}` when required). Git stacks don't get a
+  `stack.env`.
+- **Restarts and time:** `restart: unless-stopped`, `TZ=America/Los_Angeles`.
+- **Data:** in bind mounts, so it survives stack renames.
+- **Names:** every `container_name` is unique.
+
+### Network
+
+LAN `192.168.50.0/24`. Every address is a DHCP reservation.
 
 | Device | Hostname | IP |
 |---|---|---|
@@ -49,9 +173,11 @@ on the router.
 
 ### Services
 
-**Exposure:** *Public* = published through the tunnel for users and their apps. *Admin* = also
-reachable through the tunnel, but the hostname is deliberately not listed here, and the app's own
-login is required. *LAN/VPN* = not exposed at all.
+What each label means:
+- **Public:** published through the tunnel.
+- **Admin:** reachable through the tunnel, but the hostname isn't listed, and the app's own login is
+  required (verified to return 401/403 without credentials).
+- **LAN/VPN:** not exposed at all.
 
 | Service | Runs on | Internal URL | Exposure |
 |---|---|---|---|
@@ -77,68 +203,16 @@ login is required. *LAN/VPN* = not exposed at all.
 | Proxmox Backup Server | PBS | https://192.168.50.76:8007 | LAN/VPN |
 | JetKVM (out-of-band) | Jet-KVM / Jet-KVM2 | http://192.168.50.150 / .18 | LAN/VPN |
 
-Every admin app was verified to reject unauthenticated requests through the tunnel (401/403).
-
-## Layout
-
-```
-stacks/
-  shared/        stacks deployed on more than one host
-    cloudflared/   single Cloudflare tunnel, one replica per host
-  skynet/
-    arr-stack/  audiobookshelf/  foundry-vtt/  gitea-runner/  qbittorrent/
-  little-skynet/
-    homepage/  mealie/  paperless-ngx/  tautulli/  uptime-kuma/  vaultwarden/
-ansible/          OS updates for every machine, run from the Ansible LXC (see ansible/README.md)
-.gitea/workflows/
-  lint.yml        validates compose files + playbooks, blocks :latest tags and committed secrets
-  renovate.yml    runs Renovate every 4 hours
-  ansible.yml     weekly OS patching (Sunday 04:30, after backups), or any playbook on demand
-renovate.json     update policy: what auto-merges and what waits for review
-docs/
-  ci-cd.md        how updates flow from a new release to a running container
-  cloudflare.md   tunnel + Zero Trust Access design and migration
-  migration.md    moving Portainer from the old per-app repos to this repo
-  secrets.md      where secrets live and how to rotate them
-```
-
-Each stack directory has a `compose.yaml` and, if it needs secrets, a `.env.example` listing the
-variables to set in Portainer.
-
-## Deploying a stack (Portainer GitOps)
-
-1. Portainer → select the environment (host) → **Stacks → Add stack → Repository**
-2. Repository URL: this repo. Use the **internal** Gitea URL (e.g. `http://<gitea-ip>:3000/...`) so
-   deploys don't depend on Cloudflare, with a Gitea access token that only has `read:repository`.
-3. Reference `refs/heads/main`, compose path `stacks/<host>/<app>/compose.yaml`.
-4. Environment variables: everything in that stack's `.env.example`.
-5. Enable **GitOps updates → Polling** (5m) or a webhook from Gitea. Merging to `main` redeploys.
-
-## Conventions
-
-- **No secrets in Git.** Values come from Portainer stack variables, pulled into compose with
-  `${VAR}` interpolation or bare `- KEY` pass-through. Git-deployed stacks don't get a `stack.env`
-  file, so `env_file: stack.env` doesn't work here. `${VAR:?message}` makes a deploy fail loudly if a
-  required secret is missing.
-- `restart: unless-stopped` everywhere, `TZ` defaults to `America/Los_Angeles`.
-- Bind mounts for app data (`/main/...` on little-skynet, `/mnt/media-storage/...` on skynet) so data
-  survives stack renames; named volumes are pinned with `external: true`.
-- Unique `container_name`s (no generic `postgres`).
-
-## Not in the repo yet
-
-Gitea, Authentik, Immich (VM), File Browser, Plex (helper-script LXC), Pi-hole, Ollama.
-
 ## Roadmap
 
-- [x] Merge per-app repos into one repo; remove secrets from compose files
-- [x] Single Cloudflare tunnel with published application routes for every hostname
-- [x] Delete old tunnels; every exposed admin app verified to require login
-- [x] Pin every image to an exact version
-- [x] Renovate + Gitea Actions: update PRs, CI lint, tiered auto-merge ([docs/ci-cd.md](docs/ci-cd.md))
-- [ ] Ansible: OS patching for all LXCs/VMs/Pis + Proxmox/PBS ([ansible/README.md](ansible/README.md))
-- [ ] Ansible: Immich deploys and updates from this repo
-- [ ] Ansible: Portainer server/agent updates
-- [ ] Monitoring and alerting (metrics, SMART, backup failures → ntfy)
-- [ ] Managed switch + VLANs (mgmt / servers / trusted / IoT / guest)
-- [ ] UPS, offsite backups (budget permitting)
+- [x] One repo; secrets out of Git; history cleaned for publishing
+- [x] One Cloudflare tunnel (from 22); admin apps verified to require login
+- [x] Pinned images, Renovate, CI lint, tiered auto-merge
+- [x] Ansible control node; weekly patching after backups; Proxmox/PBS patching
+- [x] Admin + break-glass accounts and SSH hardening on all 16 hosts
+- [x] Immich: reviewed upgrades with pre-update DB dumps, health and version checks
+- [ ] Portainer server/agent updates via Ansible
+- [ ] Monitoring and alerting (failed jobs, backups, disk health → push notifications)
+- [ ] Gitea, Authentik, Plex, Pi-hole as code in this repo
+- [ ] Managed switch + VLANs (management / servers / trusted / IoT / guest)
+- [ ] Offsite backups and a UPS

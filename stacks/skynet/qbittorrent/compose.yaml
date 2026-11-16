@@ -19,8 +19,10 @@ services:
           - "8888:8888"
       restart: always
 
-  # Sidecar that keeps the tracker's dynamic seedbox IP in sync with the PIA VPN IP.
-  # It shares pia-qbittorrent's network namespace, so its requests leave through the VPN tunnel.
+  # Sidecar: the private tracker lets a seedbox register its current IP through an HTTP endpoint.
+  # This keeps that registration in sync with the VPN's exit IP, which changes. It shares
+  # pia-qbittorrent's network namespace, so its requests leave through the VPN tunnel.
+  # The endpoint and session cookie are Portainer variables, not part of this repo.
   seedbox-ip-sync:
       image: docker.io/curlimages/curl:8.23.0
       container_name: seedbox-ip-sync
@@ -29,8 +31,9 @@ services:
           - pia-qbittorrent
       user: "0:0"
       environment:
-          - SEEDBOX_SESSION_COOKIE=${SEEDBOX_SESSION_COOKIE}
-          - SEEDBOX_SYNC_INTERVAL=${SEEDBOX_SYNC_INTERVAL:-3600}
+          - SYNC_URL=${SEEDBOX_SYNC_URL:?Set SEEDBOX_SYNC_URL in Portainer}
+          - SESSION_COOKIE=${SEEDBOX_SESSION_COOKIE}
+          - INTERVAL=${SEEDBOX_SYNC_INTERVAL:-3600}
       volumes:
           - /mnt/media-storage/arr-stack/qbittorrent/seedbox:/data
       restart: unless-stopped
@@ -38,20 +41,20 @@ services:
       command:
           - |
             log() { echo "$$(date '+%Y-%m-%d %H:%M:%S') $$*"; }
-            URL=${SEEDBOX_SYNC_URL}
             JAR=/data/session.cookies
 
-            if [ -z "$$SEEDBOX_SESSION_COOKIE" ] && [ ! -s "$$JAR" ]; then
+            if [ -z "$$SESSION_COOKIE" ] && [ ! -s "$$JAR" ]; then
               log "ERROR: SEEDBOX_SESSION_COOKIE is not set and no saved cookie exists in $$JAR"
               exit 1
             fi
 
+            # The tracker rotates the session after first use; the rotated cookie is saved in $$JAR.
             update() {
               if [ "$$1" = "env" ] || [ ! -s "$$JAR" ]; then
-                log "Using SEEDBOX_SESSION_COOKIE from environment"
-                curl -sS -m 30 -c "$$JAR" -b "session=$$SEEDBOX_SESSION_COOKIE" "$$URL"
+                log "Using the session cookie from the environment"
+                curl -sS -m 30 -c "$$JAR" -b "$$SESSION_COOKIE" "$$SYNC_URL"
               else
-                curl -sS -m 30 -c "$$JAR" -b "$$JAR" "$$URL"
+                curl -sS -m 30 -c "$$JAR" -b "$$JAR" "$$SYNC_URL"
               fi
             }
 
@@ -62,7 +65,7 @@ services:
               log "VPN IP: $$(curl -s -m 15 https://ifconfig.me || echo unknown)"
               resp=$$(update) ; rc=$$?
               if [ $$rc -eq 0 ] && echo "$$resp" | grep -qiE 'No Session Cookie|Invalid session'; then
-                log "Saved cookie rejected ($$resp); retrying with SEEDBOX_SESSION_COOKIE from environment"
+                log "Saved cookie rejected ($$resp); retrying with the cookie from the environment"
                 rm -f "$$JAR"
                 resp=$$(update env) ; rc=$$?
               fi
@@ -77,6 +80,6 @@ services:
                 continue
               fi
               fails=0
-              log "tracker response: $$resp"
-              sleep "$$SEEDBOX_SYNC_INTERVAL"
+              log "Tracker response: $$resp"
+              sleep "$$INTERVAL"
             done

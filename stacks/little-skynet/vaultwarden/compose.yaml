@@ -1,7 +1,5 @@
-# The old compose file never passed its .env to the container, so ADMIN_TOKEN, SMTP_* and SSO_*
-# were NOT applied unless set through /admin. The environment block below now applies them. Before
-# deploying, read docs/migration.md (SSO_ONLY=true would lock out the break-glass account if
-# Authentik is down).
+# Keep SSO_ONLY=false: with SSO_ONLY=true, master-password login is disabled, which locks out the
+# break-glass account whenever Authentik is down.
 #
 # Values come from the stack's Environment variables in Portainer. Git-deployed stacks can't use
 # env_file: stack.env -- Portainer only creates that file for web-editor/upload deploys, and it

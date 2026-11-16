@@ -14,18 +14,22 @@ lint workflow ── compose config valid? every image pinned? no secrets?
    │
    ▼
 main branch ── Portainer GitOps polling (5 min) ──► docker compose up -d on the host
+            └─ Immich only: the ansible workflow ──► DB dump, deploy, health + version check
 ```
 
 ## Update policy (`renovate.json`)
 
 | Auto-merge (minor/patch) | Always reviewed |
 |---|---|
-| cloudflared, homepage, tautulli, uptime-kuma, *arr stack (one grouped PR), audiobookshelf, gitea-runner, CI tooling | vaultwarden, paperless-ngx (+ gotenberg, tika), mealie, foundry-vtt, qbittorrent, **every major version** |
+| cloudflared, homepage, tautulli, uptime-kuma, *arr stack (one grouped PR), audiobookshelf, gitea-runner, CI tooling | vaultwarden, paperless-ngx (+ gotenberg, tika), mealie, foundry-vtt, **Immich**, **every major version** |
+
+**Locked (no PRs at all):** qBittorrent. Its tag is changed by hand.
 
 - Postgres and Redis **major** updates are disabled. They need a dump/restore or `pg_upgrade`,
   not an image bump.
 - Auto-merges wait until a release is 3 days old, so broken releases usually get pulled or fixed
   first.
+- **Immich** major versions only get a PR once they're 7 days old. Its compose file is updated by hand from upstream, in the same PR as the version bump.
 - The **Dependency Dashboard** issue in Gitea lists every pending and blocked update.
 
 ## Rolling back
@@ -33,7 +37,7 @@ main branch ── Portainer GitOps polling (5 min) ──► docker compose up 
 Revert the merge commit in Gitea (or `git revert <sha>` and push). Portainer redeploys the
 previous version within 5 minutes. Images that run database migrations (Paperless, Mealie,
 Vaultwarden, Immich) may not run on the old version after a migration. For those, restore the LXC
-from PBS instead.
+from PBS, or for Immich, the pre-update dump ([ansible/README.md](../ansible/README.md#rolling-back-a-bad-upgrade)).
 
 ## One-time setup
 

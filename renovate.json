@@ -9,7 +9,7 @@
   },
   "prHourlyLimit": 0,
   "prConcurrentLimit": 15,
-  "gitAuthor": "Renovate Bot <renovate-bot@noreply.com>",
+  "gitAuthor": "Renovate Bot <renovate-bot@noreply.failsafe.work>",
   "github-actions": {
     "managerFilePatterns": [
       "/(^|/)\\.gitea/workflows/[^/]+\\.ya?ml$/"
