@@ -1,0 +1,15 @@
+---
+# Variables for the Immich VM only (the file name matches the inventory host name).
+
+# The Immich release to run. Renovate opens a PR to change this; merging it deploys the new version
+# (ansible/playbooks/immich.yml). Always read the release notes first: Immich sometimes needs a new
+# docker-compose.yml too (stacks/little-skynet/immich/compose.yaml).
+# renovate: datasource=docker depName=ghcr.io/immich-app/immich-server
+immich_version: "v3.3.5"
+
+# Where Immich lives on the VM (virtiofs share from little-skynet: /mnt/second-drive).
+immich_dir: /mnt/immich/immich
+
+# Database dumps taken before every upgrade. Keep this many.
+immich_dump_dir: "{{ immich_dir }}/pre-update-dumps"
+immich_dumps_to_keep: 5

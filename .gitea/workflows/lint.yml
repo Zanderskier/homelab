@@ -27,9 +27,13 @@ jobs:
         run: |
           status=0
           for f in $(find stacks -name compose.yaml | sort); do
+            # Stacks like Immich read a .env that only exists on the server; give CI an empty one.
+            if grep -qF -- '- .env' "$f"; then touch "$(dirname "$f")/.env"; fi
             # Secrets only exist in Portainer. Give every ${VAR} a dummy value so required (:?) vars pass.
             vars=$(grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*' "$f" | cut -c3- | sort -u)
-            if env $(for v in $vars; do printf '%s=ci ' "$v"; done) docker-compose -f "$f" config -q; then
+            # Path-like variables need a path, or compose reads them as a named volume.
+            dummies=$(for v in $vars; do case "$v" in *LOCATION|*PATH|*DIR) printf '%s=./ci ' "$v" ;; *) printf '%s=ci ' "$v" ;; esac; done)
+            if env $dummies docker-compose -f "$f" config -q; then
               echo "ok    $f"
             else
               echo "FAIL  $f"; status=1

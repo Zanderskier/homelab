@@ -1,0 +1,162 @@
+---
+# Deploys Immich on the Immich VM at the version in host_vars/immich.yml.
+# Runs automatically when a change to Immich is merged to main (see .gitea/workflows/ansible.yml).
+#
+#   1. read the version currently in .env
+#   2. if anything is about to change: dump the database first (pg_dumpall, kept in pre-update-dumps/)
+#   3. install the compose file from the repo, set IMMICH_VERSION in .env (that one line only)
+#   4. docker compose pull + up --wait (waits for every container's healthcheck)
+#   5. check Immich answers and reports the expected version
+#
+# Rolling back is NOT automatic: new versions often migrate the database. See ansible/README.md.
+- name: Deploy Immich
+  hosts: immich
+  become: true
+  gather_facts: false
+  vars:
+    compose_src: "{{ playbook_dir }}/../../stacks/little-skynet/immich/compose.yaml"
+  tasks:
+    - name: Check the version looks right (vX.Y.Z)
+      ansible.builtin.assert:
+        that: immich_version is match('^v\d+\.\d+\.\d+$')
+        fail_msg: "immich_version '{{ immich_version }}' isn't a vX.Y.Z release tag."
+        quiet: true
+
+    - name: Look for the existing .env
+      ansible.builtin.stat:
+        path: "{{ immich_dir }}/.env"
+      register: env_file
+
+    - name: Stop if .env is missing (it holds the DB password, so Ansible never creates it)
+      ansible.builtin.assert:
+        that: env_file.stat.exists
+        fail_msg: "{{ immich_dir }}/.env not found. Create it from stacks/little-skynet/immich/.env.example."
+        quiet: true
+
+    - name: Read the version and DB user currently in .env
+      ansible.builtin.shell: |
+        set -o pipefail
+        { grep -E '^IMMICH_VERSION=' .env || echo 'IMMICH_VERSION=unknown'; } | head -n1 | cut -d= -f2- | tr -d '" '
+        { grep -E '^DB_USERNAME=' .env || echo 'DB_USERNAME=postgres'; } | head -n1 | cut -d= -f2- | tr -d '" '
+      args:
+        chdir: "{{ immich_dir }}"
+        executable: /bin/bash
+      register: env_values
+      changed_when: false
+      check_mode: false   # read-only, so also run it in check mode: previews then show the real version
+
+    - name: Work out what's changing
+      ansible.builtin.set_fact:
+        current_version: "{{ env_values.stdout_lines[0] | default('unknown') }}"
+        db_user: "{{ env_values.stdout_lines[1] | default('postgres') }}"
+
+    - name: Compare the compose file with the repo (no changes yet)
+      ansible.builtin.copy:
+        src: "{{ compose_src }}"
+        dest: "{{ immich_dir }}/docker-compose.yml"
+        owner: "{{ env_file.stat.uid }}"
+        group: "{{ env_file.stat.gid }}"
+        mode: "0664"
+      check_mode: true
+      register: compose_diff
+
+    - name: Decide whether to deploy
+      ansible.builtin.set_fact:
+        needs_deploy: "{{ current_version != immich_version or compose_diff is changed }}"
+
+    - name: Summary of the plan
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'Upgrading ' ~ current_version ~ ' -> ' ~ immich_version if current_version != immich_version
+             else 'Version stays ' ~ immich_version }}{{ ' | compose file changed' if compose_diff is changed else '' }}
+          {{- '' if needs_deploy else ' | nothing to do' }}
+
+    - name: Deploy
+      when: needs_deploy | bool
+      block:
+        - name: Make the dump folder
+          ansible.builtin.file:
+            path: "{{ immich_dump_dir }}"
+            state: directory
+            owner: "{{ env_file.stat.uid }}"
+            group: "{{ env_file.stat.gid }}"
+            mode: "0750"
+
+        - name: Dump the whole database before changing anything
+          # Immich's documented backup command, minus "-t": a pseudo-terminal would turn every
+          # line ending into \r\n and corrupt the dump. The file name records the version it came
+          # from, which is the version you'd need to restore it with.
+          ansible.builtin.shell: |
+            set -o pipefail
+            docker exec immich_postgres pg_dumpall --clean --if-exists --username={{ db_user | quote }} \
+              | gzip > {{ (immich_dump_dir ~ '/immich-' ~ current_version ~ '-' ~ now(fmt='%Y%m%d-%H%M%S') ~ '.sql.gz') | quote }}
+          args:
+            executable: /bin/bash
+          changed_when: true
+          when: not ansible_check_mode
+
+        - name: Keep only the newest dumps
+          ansible.builtin.shell: |
+            set -o pipefail
+            ls -1t immich-*.sql.gz 2>/dev/null | tail -n +{{ immich_dumps_to_keep + 1 }} | xargs -r rm -v
+          args:
+            chdir: "{{ immich_dump_dir }}"
+            executable: /bin/bash
+          register: pruned
+          changed_when: pruned.stdout | length > 0
+          when: not ansible_check_mode
+
+        - name: Install the compose file from the repo (previous one kept as a timestamped backup)
+          ansible.builtin.copy:
+            src: "{{ compose_src }}"
+            dest: "{{ immich_dir }}/docker-compose.yml"
+            owner: "{{ env_file.stat.uid }}"
+            group: "{{ env_file.stat.gid }}"
+            mode: "0664"
+            backup: true
+
+        - name: Set IMMICH_VERSION in .env (the only line Ansible touches)
+          ansible.builtin.lineinfile:
+            path: "{{ immich_dir }}/.env"
+            regexp: '^IMMICH_VERSION='
+            line: 'IMMICH_VERSION="{{ immich_version }}"'
+
+        - name: Pull the images
+          ansible.builtin.command: docker compose pull
+          args:
+            chdir: "{{ immich_dir }}"
+          changed_when: true
+          when: not ansible_check_mode
+
+        - name: Start Immich and wait until every container reports healthy
+          ansible.builtin.command: docker compose up -d --remove-orphans --wait --wait-timeout 900
+          args:
+            chdir: "{{ immich_dir }}"
+          changed_when: true
+          when: not ansible_check_mode
+
+    - name: Check Immich answers
+      ansible.builtin.uri:
+        url: http://127.0.0.1:2283/api/server/ping
+        return_content: true
+      register: ping
+      until: ping.status == 200 and (ping.json.res | default('')) == 'pong'
+      retries: 30
+      delay: 10
+      when: not ansible_check_mode
+
+    - name: Check Immich reports the expected version
+      ansible.builtin.uri:
+        url: http://127.0.0.1:2283/api/server/version
+        return_content: true
+      register: running
+      failed_when: >-
+        ('v' ~ running.json.major ~ '.' ~ running.json.minor ~ '.' ~ running.json.patch) != immich_version
+      when: not ansible_check_mode
+
+    - name: Done
+      ansible.builtin.debug:
+        msg: >-
+          Immich is running {{ immich_version }}
+          {{- ' (upgraded from ' ~ current_version ~ ')' if current_version != immich_version else '' }}.
+      when: not ansible_check_mode
