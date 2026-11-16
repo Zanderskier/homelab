@@ -34,7 +34,7 @@ jobs:
   ansible:
     runs-on: ansible
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Ansible
         env:
