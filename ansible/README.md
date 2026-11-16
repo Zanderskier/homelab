@@ -79,6 +79,17 @@ Copy `bootstrap/bootstrap-ssh.sh` over (with `PUBKEY` filled in), then:
 `lxcs` sets up every **running** LXC on that host, including the Ansible LXC itself (harmless).
 Each machine prints `ok: <hostname> <ip>`.
 
+**New machines after SSH hardening.** Root SSH is off everywhere, so copy the script to the new
+machine's Proxmox host as **alex** (`scp bootstrap-ssh.sh alex@192.168.50.8:~/`), then run it
+there with `sudo`:
+
+- **New LXC:** on its Proxmox host, `sudo bash ~/bootstrap-ssh.sh lxcs` (or run it from the
+  Proxmox web UI → node → **Shell**, which is root).
+- **New VM or Pi:** copy it to the machine as its first user, then `sudo bash bootstrap-ssh.sh self`.
+
+Then add it to `inventory/hosts.yml` and `known_hosts`, and run `users` + `harden-ssh` with
+`limit` set to the new host.
+
 ### 4. Record each host's identity (known_hosts)
 
 On the Ansible LXC:
