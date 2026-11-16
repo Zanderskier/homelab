@@ -1,8 +1,16 @@
 ---
 # Turns off root logins and password logins over SSH: keys only, and never as root.
+# Exception: the break-glass account may use its password, but only from the LAN/VPN.
 #
 # Run this ONLY after users.yml, and after testing by hand that "ssh alex@<host>" and "sudo -v"
 # work. Start with one host (limit), then the rest.
+#
+# Safety:
+#   - refuses to run where alex has no SSH key
+#   - snapshots the current SSH config first; if ANY check fails, the snapshot is put back and ssh
+#     is never restarted, so a failed run leaves the host exactly as it was
+#   - check_mode shows the diff only (the live sshd checks need the new files on disk, so they're
+#     skipped in check mode)
 #
 # Root still works on the console (Proxmox web shell, `pct enter`, VM console, JetKVM), so a
 # mistake here is recoverable everywhere except the Pis, which need a keyboard and monitor. Do them last.
@@ -12,6 +20,8 @@
   serial: 1
   max_fail_percentage: 0
   gather_facts: false
+  vars:
+    dropin: /etc/ssh/sshd_config.d/00-homelab-hardening.conf
   tasks:
     - name: Look for alex's SSH keys
       ansible.builtin.stat:
@@ -29,80 +39,131 @@
           playbook first.
         quiet: true
 
-    - name: Install the hardening settings
-      # sshd uses the FIRST value it reads for each setting, and Debian/Ubuntu read
-      # sshd_config.d/*.conf before the rest of sshd_config. A 00- file therefore beats both the
-      # old "PermitRootLogin yes" in sshd_config and Ubuntu's 50-cloud-init.conf.
+    - name: Check whether the hardening file already exists
+      ansible.builtin.stat:
+        path: "{{ dropin }}"
+      register: dropin_before
+
+    - name: Snapshot the current sshd_config
       ansible.builtin.copy:
-        dest: /etc/ssh/sshd_config.d/00-homelab-hardening.conf
-        owner: root
-        group: root
-        mode: "0644"
-        content: |
-          # Managed by Ansible (ansible/playbooks/harden-ssh.yml). Change it there, not here.
-          PermitRootLogin no
-          PasswordAuthentication no
-          KbdInteractiveAuthentication no
-          PubkeyAuthentication yes
-          MaxAuthTries 3
-          X11Forwarding no
-      notify: Restart ssh
+        src: /etc/ssh/sshd_config
+        dest: /etc/ssh/sshd_config.pre-harden
+        remote_src: true
+        mode: preserve
 
-    - name: Allow a password for the break-glass account only, and only from the LAN/VPN
-      # A Match block has to come after every global setting, so it goes at the very END of
-      # sshd_config, not in sshd_config.d (which is read at the top).
-      ansible.builtin.blockinfile:
-        path: /etc/ssh/sshd_config
-        insertafter: EOF
-        marker: "# {mark} ANSIBLE MANAGED: break-glass password login (harden-ssh.yml)"
-        block: |
-          Match User {{ breakglass_user }} Address {{ breakglass_allowed_from | join(',') }}
-              PasswordAuthentication yes
-      notify: Restart ssh
-      no_log: true
+    - name: Snapshot the current hardening file
+      ansible.builtin.copy:
+        src: "{{ dropin }}"
+        dest: "{{ dropin }}.pre-harden"
+        remote_src: true
+        mode: preserve
+      when: dropin_before.stat.exists
 
-    - name: Check the whole sshd configuration is valid
-      ansible.builtin.command: /usr/sbin/sshd -t
-      changed_when: false
+    - name: Apply and verify (undone automatically if anything fails)
+      block:
+        - name: Install the hardening settings
+          # sshd uses the FIRST value it reads for each setting, and Debian/Ubuntu read
+          # sshd_config.d/*.conf before the rest of sshd_config. A 00- file therefore beats both
+          # the old "PermitRootLogin yes" in sshd_config and Ubuntu's 50-cloud-init.conf.
+          ansible.builtin.copy:
+            dest: "{{ dropin }}"
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              # Managed by Ansible (ansible/playbooks/harden-ssh.yml). Change it there, not here.
+              PermitRootLogin no
+              PasswordAuthentication no
+              KbdInteractiveAuthentication no
+              PubkeyAuthentication yes
+              MaxAuthTries 3
+              X11Forwarding no
+          notify: Restart ssh
 
-    - name: Read the settings sshd will actually use
-      ansible.builtin.command: /usr/sbin/sshd -T
-      register: sshd_effective
-      changed_when: false
+        - name: Allow a password for the break-glass account only, and only from the LAN/VPN
+          # A Match block has to come after every global setting, so it goes at the very END of
+          # sshd_config, not in sshd_config.d (which is read at the top).
+          ansible.builtin.blockinfile:
+            path: /etc/ssh/sshd_config
+            insertafter: EOF
+            marker: "# {mark} ANSIBLE MANAGED: break-glass password login (harden-ssh.yml)"
+            block: |
+              Match User {{ breakglass_user }} Address {{ breakglass_allowed_from | join(',') }}
+                  PasswordAuthentication yes
+          notify: Restart ssh
+          no_log: true
 
-    - name: Confirm root and password logins are really off before restarting ssh
-      ansible.builtin.assert:
-        that:
-          - "'permitrootlogin no' in sshd_effective.stdout_lines"
-          - "'passwordauthentication no' in sshd_effective.stdout_lines"
-          - "'kbdinteractiveauthentication no' in sshd_effective.stdout_lines"
-        fail_msg: >-
-          sshd would still allow root or password logins. Another file probably sets them first,
-          or sshd_config has no "Include /etc/ssh/sshd_config.d/*.conf" line.
-        quiet: true
+        - name: Verify with sshd itself (real runs only)
+          when: not ansible_check_mode
+          block:
+            - name: Check the whole sshd configuration is valid
+              ansible.builtin.command: /usr/sbin/sshd -t
+              changed_when: false
 
-    - name: Ask sshd which logins would accept a password
-      # -C simulates a connection: who, and from which address.
-      ansible.builtin.command: "/usr/sbin/sshd -T -C user={{ item.user }},host=test,addr={{ item.addr }}"
-      loop:
-        - { user: "{{ breakglass_user }}", addr: "192.168.50.10" }   # break-glass from the LAN
-        - { user: "{{ breakglass_user }}", addr: "203.0.113.10" }    # break-glass from the internet
-        - { user: "alex", addr: "192.168.50.10" }                     # anyone else from the LAN
-      register: sshd_match
-      changed_when: false
-      no_log: true
+            - name: Read the settings sshd will actually use
+              ansible.builtin.command: /usr/sbin/sshd -T
+              register: sshd_effective
+              changed_when: false
 
-    - name: Confirm the password is accepted only for break-glass from the LAN/VPN
-      ansible.builtin.assert:
-        that:
-          - "'passwordauthentication yes' in sshd_match.results[0].stdout_lines"
-          - "'passwordauthentication no' in sshd_match.results[1].stdout_lines"
-          - "'passwordauthentication no' in sshd_match.results[2].stdout_lines"
-          - "'permitrootlogin no' in sshd_match.results[0].stdout_lines"
-        fail_msg: >-
-          The break-glass Match rule isn't behaving as expected (it should allow a password only
-          for that user and only from the LAN/VPN). ssh was NOT restarted.
-        quiet: true
+            - name: Confirm root and password logins are really off
+              ansible.builtin.assert:
+                that:
+                  - "'permitrootlogin no' in sshd_effective.stdout_lines"
+                  - "'passwordauthentication no' in sshd_effective.stdout_lines"
+                  - "'kbdinteractiveauthentication no' in sshd_effective.stdout_lines"
+                fail_msg: >-
+                  sshd would still allow root or password logins. Another file probably sets them
+                  first, or sshd_config has no "Include /etc/ssh/sshd_config.d/*.conf" line.
+                quiet: true
+
+            - name: Ask sshd which logins would accept a password
+              # -C simulates a connection: who, and from which address.
+              ansible.builtin.command: "/usr/sbin/sshd -T -C user={{ item.user }},host=test,addr={{ item.addr }}"
+              loop:
+                - { user: "{{ breakglass_user }}", addr: "192.168.50.10" }   # break-glass, LAN
+                - { user: "{{ breakglass_user }}", addr: "203.0.113.10" }    # break-glass, internet
+                - { user: "alex", addr: "192.168.50.10" }                     # anyone else, LAN
+              register: sshd_match
+              changed_when: false
+              no_log: true
+
+            - name: Confirm a password works only for break-glass from the LAN/VPN
+              ansible.builtin.assert:
+                that:
+                  - "'passwordauthentication yes' in sshd_match.results[0].stdout_lines"
+                  - "'passwordauthentication no' in sshd_match.results[1].stdout_lines"
+                  - "'passwordauthentication no' in sshd_match.results[2].stdout_lines"
+                  - "'permitrootlogin no' in sshd_match.results[0].stdout_lines"
+                fail_msg: >-
+                  The break-glass Match rule isn't behaving as expected (it should allow a
+                  password only for that user and only from the LAN/VPN).
+                quiet: true
+
+      rescue:
+        - name: Put sshd_config back the way it was
+          ansible.builtin.copy:
+            src: /etc/ssh/sshd_config.pre-harden
+            dest: /etc/ssh/sshd_config
+            remote_src: true
+            mode: preserve
+
+        - name: Put the old hardening file back
+          ansible.builtin.copy:
+            src: "{{ dropin }}.pre-harden"
+            dest: "{{ dropin }}"
+            remote_src: true
+            mode: preserve
+          when: dropin_before.stat.exists
+
+        - name: Remove the hardening file this run added
+          ansible.builtin.file:
+            path: "{{ dropin }}"
+            state: absent
+          when: not dropin_before.stat.exists
+
+        - name: Stop and report (ssh was not restarted; the host is as it was before this run)
+          ansible.builtin.fail:
+            msg: "{{ ansible_failed_result.msg | default('A check failed') }}. Changes undone, ssh not restarted."
 
   handlers:
     - name: Restart ssh
