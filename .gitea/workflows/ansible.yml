@@ -2,10 +2,17 @@
 # Steps run directly on that LXC (host mode), where the Ansible SSH key lives. The key is never
 # stored in Gitea.
 #   - Every Sunday 04:30 Pacific (05:30 in summer): patch-guests (OS updates for LXCs, VMs, Pis; no reboots)
+#   - When an Immich change reaches main (e.g. a merged Renovate PR): the immich playbook
 #   - Any time, by hand: Actions tab > ansible > Run workflow > pick a playbook
 name: ansible
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - stacks/little-skynet/immich/**
+      - ansible/inventory/host_vars/immich.yml
+      - ansible/playbooks/immich.yml
   schedule:
     # Cron is UTC. 12:30 UTC = 04:30 PST / 05:30 PDT: always after the nightly PBS backups
     # (skynet 03:00, little-skynet 03:30), so every patch run has a fresh backup to roll back to.
@@ -15,7 +22,7 @@ on:
       playbook:
         description: Playbook to run
         type: choice
-        options: [ping, patch-guests, patch-hosts, users, harden-ssh]
+        options: [ping, patch-guests, patch-hosts, users, harden-ssh, immich]
         default: ping
       limit:
         description: "Only these hosts or groups (optional, e.g. pis or plex,gitea)"
@@ -57,14 +64,20 @@ jobs:
       - name: Run playbook
         working-directory: ansible
         env:
-          # Inputs are empty on scheduled runs, so these defaults apply then.
-          PLAYBOOK: ${{ inputs.playbook || 'patch-guests' }}
+          EVENT: ${{ gitea.event_name }}
+          # Inputs are empty on scheduled and push runs, so these defaults apply then.
+          INPUT_PLAYBOOK: ${{ inputs.playbook }}
           LIMIT: ${{ inputs.limit }}
           ALLOW_REBOOT: ${{ inputs.allow_reboot || false }}
           CHECK_MODE: ${{ inputs.check_mode || false }}
           ANSIBLE_FORCE_COLOR: "1"
         run: |
-          case "$PLAYBOOK" in ping|patch-guests|patch-hosts|users|harden-ssh) ;; *) echo "unknown playbook"; exit 1 ;; esac
+          case "$EVENT" in
+            push)     PLAYBOOK=immich ;;          # only Immich paths trigger a push run
+            schedule) PLAYBOOK=patch-guests ;;
+            *)        PLAYBOOK="$INPUT_PLAYBOOK" ;;
+          esac
+          case "$PLAYBOOK" in ping|patch-guests|patch-hosts|users|harden-ssh|immich) ;; *) echo "unknown playbook '$PLAYBOOK'"; exit 1 ;; esac
           args=(-e "allow_reboot=$ALLOW_REBOOT")
           # Secrets that must never be in Git (e.g. alex's sudo password hash) live only on this LXC.
           [ -f /ansible_config/secrets.yml ] && args+=(-e @/ansible_config/secrets.yml)

@@ -174,6 +174,56 @@ missing or both passwords are the same.
 4. Run `harden-ssh` on everything, with the Pis last (`limit: pis`). They have no web console, so
    a mistake there means plugging in a keyboard and monitor.
 
+## Immich
+
+Immich runs with docker compose on the Immich VM (`/mnt/immich/immich`, a virtiofs share from
+little-skynet). Ansible deploys it, not Portainer.
+
+```
+Renovate PR: immich_version v3.3.5 -> v3.4.0   (host_vars/immich.yml, never auto-merged)
+   │  read the release notes, merge
+   ▼
+ansible workflow (triggered by the push to main)
+   1. pg_dumpall -> /mnt/immich/immich/pre-update-dumps/immich-<old version>-<date>.sql.gz (keeps 5)
+   2. docker-compose.yml from the repo (old one kept as docker-compose.yml.<date>~)
+   3. IMMICH_VERSION="v3.4.0" in .env (the only line Ansible changes; password and paths untouched)
+   4. docker compose pull && up -d --wait
+   5. /api/server/ping must answer "pong", and /api/server/version must report v3.4.0
+```
+
+- **Changing the version by hand:** edit `immich_version` in `inventory/host_vars/immich.yml` and
+  push, or run the `immich` playbook from the Actions tab.
+- **Release notes say "update docker-compose.yml":** paste the new upstream file into
+  `stacks/little-skynet/immich/compose.yaml`, below the homelab notes, in the same PR as the version
+  bump.
+- **Backups:** the VM's own disk is in PBS, but `/mnt/immich` (photos + database) is **not**. PBS
+  doesn't back up virtiofs. It's covered by the critical-data backup and Immich's built-in database
+  backups (Administration → Settings → Backup), plus the pre-update dumps above.
+
+### Rolling back a bad upgrade
+
+Upgrades usually migrate the database, so an older Immich can't simply start on a newer database.
+Roll back by restoring the dump taken just before the upgrade, using **the version in the dump's
+file name**:
+
+```bash
+ssh 192.168.50.106           # as alex
+cd /mnt/immich/immich
+sudo sed -i 's/^IMMICH_VERSION=.*/IMMICH_VERSION="v3.3.5"/' .env     # the version in the dump name
+sudo docker compose down
+sudo mv postgres postgres.broken-$(date +%F)                         # keep it until the restore works
+sudo docker compose pull && sudo docker compose create
+sudo docker start immich_postgres && sleep 15
+gunzip --stdout pre-update-dumps/immich-v3.3.5-<date>.sql.gz \
+  | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" \
+  | sudo docker exec -i immich_postgres psql --dbname=postgres --username=postgres
+sudo docker compose up -d
+```
+
+That restore follows Immich's backup-and-restore guide. Then set `immich_version` back in the repo
+too, so the next run doesn't upgrade again, and close or ignore Renovate's PR until the problem is
+fixed upstream.
+
 ## Adding a machine
 
 1. Run `bootstrap-ssh.sh self` on it (or `lxcs` on its Proxmox host).
