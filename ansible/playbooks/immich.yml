@@ -86,8 +86,10 @@
           # Immich's documented backup command, minus "-t": a pseudo-terminal would turn every
           # line ending into \r\n and corrupt the dump. The file name records the version it came
           # from, which is the version you'd need to restore it with.
+          # umask 077: the dump holds the whole database (emails, password hashes), so root only.
           ansible.builtin.shell: |
             set -o pipefail
+            umask 077
             docker exec immich_postgres pg_dumpall --clean --if-exists --username={{ db_user | quote }} \
               | gzip > {{ (immich_dump_dir ~ '/immich-' ~ current_version ~ '-' ~ now(fmt='%Y%m%d-%H%M%S') ~ '.sql.gz') | quote }}
           args:

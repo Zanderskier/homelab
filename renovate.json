@@ -95,6 +95,17 @@
       ]
     },
     {
+      "description": "Immich major releases (v4, v5...) only get a PR once they're 7 days old, so the first patch fixes are usually out by then",
+      "matchPackageNames": [
+        "ghcr.io/immich-app/immich-server"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "minimumReleaseAge": "7 days",
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
+    },
+    {
       "description": "One PR for the whole *arr stack, so it redeploys once",
       "matchFileNames": [
         "stacks/skynet/arr-stack/**"
