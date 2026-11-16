@@ -43,6 +43,7 @@
         executable: /bin/bash
       register: env_values
       changed_when: false
+      check_mode: false   # read-only, so also run it in check mode: previews then show the real version
 
     - name: Work out what's changing
       ansible.builtin.set_fact:
