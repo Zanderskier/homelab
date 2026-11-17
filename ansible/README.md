@@ -159,11 +159,18 @@ chmod 600 /ansible_config/secrets.yml
 alex_password_hash: '$6$...'          # alex's sudo password
 breakglass_user: 'pick-a-name'        # not "admin"/"breakglass": something not guessable
 breakglass_password_hash: '$6$...'    # a different, long password (generate it in Vaultwarden)
+portainer_api_token: 'ptr_...'        # optional: lets portainer-discover list environments and stacks
 ```
 
 Keep the single quotes: the hashes contain `$`. Store both passwords and the break-glass name in
 Vaultwarden. The workflow loads this file automatically, and `users` refuses to run if anything is
 missing or both passwords are the same.
+
+**`portainer_api_token`:** create it in Portainer (your user name, top right → **My account →
+Access tokens**). Portainer CE tokens can't be limited: one has the full rights of the user that
+made it, which for an admin means control of Docker on every host. That's why it lives only in this
+file. The `portainer-discover` playbook is read-only and prints stack variable **names**, never
+values.
 
 ### Order (don't skip the testing)
 

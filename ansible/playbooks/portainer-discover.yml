@@ -1,0 +1,116 @@
+---
+# Read-only. Reports how Docker and Portainer are set up on every host and, when an API token is
+# configured, which environments and stacks the Portainer server knows about. It changes nothing
+# and prints no secret values (variable NAMES only). Used to plan changes to Portainer from facts.
+#
+# The API part needs one line in /ansible_config/secrets.yml on the Ansible LXC:
+#   portainer_api_token: 'ptr_...'
+# Create the token in Portainer: your user name (top right) > My account > Access tokens.
+# Portainer CE tokens carry the full rights of the user that made them, so it stays in that file.
+- name: Docker and Portainer on each host
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Collect facts (read-only script)
+      ansible.builtin.script: "{{ playbook_dir }}/../files/portainer-discover.sh"
+      register: discovery
+      changed_when: false
+      check_mode: false
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: "{{ discovery.stdout_lines }}"
+
+- name: Environments and stacks known to the Portainer server
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    portainer_url: https://192.168.50.81:9443
+    pt_types:
+      "1": Docker (local socket or API)
+      "2": Agent
+      "3": Azure
+      "4": Edge agent
+      "5": Kubernetes (local)
+      "6": Agent on Kubernetes
+      "7": Edge agent on Kubernetes
+  tasks:
+    - name: Explain how to enable this part
+      ansible.builtin.debug:
+        msg: >-
+          No portainer_api_token in /ansible_config/secrets.yml, so environments and stacks were not
+          listed. See the comment at the top of playbooks/portainer-discover.yml.
+      when: portainer_api_token is not defined
+
+    - name: Read from the Portainer API
+      when: portainer_api_token is defined
+      block:
+        - name: Get the server version
+          ansible.builtin.uri:
+            url: "{{ portainer_url }}/api/system/status"
+            validate_certs: false
+            return_content: true
+          register: pt_status
+          check_mode: false
+
+        - name: Get environments
+          ansible.builtin.uri:
+            url: "{{ portainer_url }}/api/endpoints"
+            headers:
+              X-API-Key: "{{ portainer_api_token }}"
+            validate_certs: false
+            return_content: true
+          register: pt_endpoints
+          check_mode: false
+          no_log: true   # hides the token
+
+        - name: Get stacks
+          ansible.builtin.uri:
+            url: "{{ portainer_url }}/api/stacks"
+            headers:
+              X-API-Key: "{{ portainer_api_token }}"
+            validate_certs: false
+            return_content: true
+          register: pt_stacks
+          check_mode: false
+          no_log: true   # the response includes each stack's variable VALUES; only names are printed below
+
+        - name: Server
+          ansible.builtin.debug:
+            msg: "Portainer server at {{ portainer_url }} is version {{ pt_status.json.Version | default('unknown') }}"
+
+        - name: Environments
+          ansible.builtin.debug:
+            msg: "{{ env_lines.splitlines() | map('trim') | select | list }}"
+          vars:
+            env_lines: |
+              {% for e in pt_endpoints.json | sort(attribute='Id') %}
+              {% set kind = pt_types[e.Type | string] | default('type ' ~ e.Type) %}
+              {% set agent = (e.Agent | default({}, true)).Version | default('-', true) %}
+              {% set snap = e.Snapshots | default([], true) | first | default({}, true) %}
+              {% set running = snap.RunningContainerCount | default('?') %}
+              id={{ e.Id }} | {{ e.Name }} | {{ kind }} | {{ e.URL }} | {{ 'up' if e.Status == 1 else 'DOWN' }} | agent {{ agent }} | {{ running }} running
+              {% endfor %}
+
+        - name: Stacks
+          ansible.builtin.debug:
+            msg: "{{ stack_lines.splitlines() | map('trim') | select | list }}"
+          vars:
+            env_names: "{{ dict(pt_endpoints.json | map(attribute='Id') | map('string') | zip(pt_endpoints.json | map(attribute='Name'))) }}"
+            stack_lines: |
+              {% for s in pt_stacks.json | sort(attribute='Id') %}
+              {% set git = s.GitConfig | default({}, true) %}
+              {% set gone = 'ORPHANED (environment ' ~ s.EndpointId ~ ' no longer exists)' %}
+              {% set place = env_names[s.EndpointId | string] | default(gone) %}
+              {% set repo = git.URL | default('') | regex_replace('//[^/@]+@', '//') %}
+              {% set source = (repo ~ ' : ' ~ git.ConfigFilePath | default('?')) if git else 'web editor or upload (not Git)' %}
+              {% set auto = s.AutoUpdate | default({}, true) %}
+              {% set polling = auto.Interval | default('off', true) %}
+              {% set hook = ' + webhook' if auto.Webhook | default('', true) else '' %}
+              {% set names = s.Env | default([], true) | map(attribute='name') | join(', ') %}
+              id={{ s.Id }} | {{ s.Name }} | on: {{ place }} | {{ 'active' if s.Status == 1 else 'INACTIVE' }}
+              id={{ s.Id }} source: {{ source }} | auto-update: {{ polling }}{{ hook }}
+              id={{ s.Id }} variable names: {{ names | default('none', true) }}
+              {% endfor %}

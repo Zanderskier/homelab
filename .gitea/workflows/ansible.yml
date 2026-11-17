@@ -22,7 +22,7 @@ on:
       playbook:
         description: Playbook to run
         type: choice
-        options: [ping, patch-guests, patch-hosts, users, harden-ssh, immich]
+        options: [ping, patch-guests, patch-hosts, users, harden-ssh, immich, portainer-discover]
         default: ping
       limit:
         description: "Only these hosts or groups (optional, e.g. pis or plex,gitea)"
@@ -77,7 +77,10 @@ jobs:
             schedule) PLAYBOOK=patch-guests ;;
             *)        PLAYBOOK="$INPUT_PLAYBOOK" ;;
           esac
-          case "$PLAYBOOK" in ping|patch-guests|patch-hosts|users|harden-ssh|immich) ;; *) echo "unknown playbook '$PLAYBOOK'"; exit 1 ;; esac
+          case "$PLAYBOOK" in
+            ping|patch-guests|patch-hosts|users|harden-ssh|immich|portainer-discover) ;;
+            *) echo "unknown playbook '$PLAYBOOK'"; exit 1 ;;
+          esac
           args=(-e "allow_reboot=$ALLOW_REBOOT")
           # Secrets that must never be in Git (e.g. alex's sudo password hash) live only on this LXC.
           [ -f /ansible_config/secrets.yml ] && args+=(-e @/ansible_config/secrets.yml)
