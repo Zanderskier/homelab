@@ -22,7 +22,7 @@ on:
       playbook:
         description: Playbook to run
         type: choice
-        options: [ping, patch-guests, patch-hosts, users, harden-ssh, immich, portainer-discover]
+        options: [ping, patch-guests, patch-hosts, users, harden-ssh, immich, portainer-discover, docker-engine]
         default: ping
       limit:
         description: "Only these hosts or groups (optional, e.g. pis or plex,gitea)"
@@ -36,6 +36,10 @@ on:
         description: "Dry run: show what would change, change nothing"
         type: boolean
         default: false
+      extra_vars:
+        description: "Extra variables (optional, key=value), e.g. docker_engine_snapshot=false"
+        type: string
+        required: false
 
 jobs:
   ansible:
@@ -70,6 +74,7 @@ jobs:
           LIMIT: ${{ inputs.limit }}
           ALLOW_REBOOT: ${{ inputs.allow_reboot || false }}
           CHECK_MODE: ${{ inputs.check_mode || false }}
+          EXTRA_VARS: ${{ inputs.extra_vars }}
           ANSIBLE_FORCE_COLOR: "1"
         run: |
           case "$EVENT" in
@@ -78,12 +83,14 @@ jobs:
             *)        PLAYBOOK="$INPUT_PLAYBOOK" ;;
           esac
           case "$PLAYBOOK" in
-            ping|patch-guests|patch-hosts|users|harden-ssh|immich|portainer-discover) ;;
+            ping|patch-guests|patch-hosts|users|harden-ssh|immich|portainer-discover|docker-engine) ;;
             *) echo "unknown playbook '$PLAYBOOK'"; exit 1 ;;
           esac
           args=(-e "allow_reboot=$ALLOW_REBOOT")
           # Secrets that must never be in Git (e.g. alex's sudo password hash) live only on this LXC.
           [ -f /ansible_config/secrets.yml ] && args+=(-e @/ansible_config/secrets.yml)
+          # Passed as one quoted argument, so it can only ever set variables.
+          [ -n "$EXTRA_VARS" ] && args+=(-e "$EXTRA_VARS")
           [ -n "$LIMIT" ] && args+=(--limit "$LIMIT")
           [ "$CHECK_MODE" = "true" ] && args+=(--check --diff)
           echo "Running playbooks/$PLAYBOOK.yml ${args[*]}"

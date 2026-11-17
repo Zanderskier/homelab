@@ -22,6 +22,12 @@ ansible/
     ping.yml               safe test: log in, show OS, check sudo. Changes nothing
     patch-guests.yml       apt full-upgrade on LXCs, VMs, Pis + `pihole -up`. Weekly schedule
     patch-hosts.yml        apt full-upgrade on Proxmox VE + PBS. Manual only, never reboots
+    users.yml              admin + break-glass accounts on every machine
+    harden-ssh.yml         no root or password SSH logins (break-glass excepted, LAN/VPN only)
+    immich.yml             deploys Immich at the version in host_vars/immich.yml
+    portainer-discover.yml read-only report: Docker + Portainer on every host, environments, stacks
+    docker-engine.yml      one-time per host: Debian's docker.io 20.10 -> Docker CE, with a snapshot
+  files/                   scripts and keys the playbooks copy to hosts
   bootstrap/
     setup-control-node.sh  one-time: turns a fresh LXC into the Ansible LXC
     bootstrap-ssh.sh       one-time per machine: creates the ansible user + authorizes the key
@@ -230,6 +236,32 @@ sudo docker compose up -d
 That restore follows Immich's backup-and-restore guide. Then set `immich_version` back in the repo
 too, so the next run doesn't upgrade again, and close or ignore Renovate's PR until the problem is
 fixed upstream.
+
+## Docker engine: moving off Debian's docker.io
+
+Three LXCs on little-skynet (file-browser, cloudflared, portainer) were built with Debian's
+`docker.io` package: Docker 20.10 from 2023, with no `docker compose` plugin. Every other Docker
+host runs Docker CE from Docker's own repository. `docker-engine` moves a host across, so every
+host can be managed the same way and `patch-guests` keeps the engine current.
+
+```
+check the Proxmox container ID is this host -> pct snapshot -> add Docker's apt repo
+  -> download the new packages -> remove docker.io (containers stop) -> install Docker CE
+  -> wait until every container that was running before is running again
+```
+
+- **One host per run.** It refuses to start without `limit`, and only hosts in the `old_docker`
+  inventory group can be touched. Order: `file-browser` (the test), `cloudflared`, `portainer`.
+- **Outage:** every container on that host restarts, typically 1-3 minutes. During `cloudflared`'s
+  run, everything published through the Cloudflare tunnel is unreachable from outside.
+- **Check mode** shows the plan (versions, containers that will restart, Proxmox settings). It can't
+  simulate installing Docker CE, because Docker's repository isn't on the host yet.
+- **Undo:** Proxmox UI → little-skynet → the CT → **Snapshots** → `pre_docker_ce_<date>` →
+  **Rollback**. The run prints the exact snapshot name. Delete the snapshot after a day or two.
+- **No snapshot support** on a container's storage: back it up by hand (CT → Backup → Backup
+  now), then run with extra_vars `docker_engine_snapshot=false`.
+- **Afterwards:** remove the host from `old_docker` in `inventory/hosts.yml`. Old `docker-compose`
+  (v1) is removed with the old engine; use `docker compose` (with a space) from then on.
 
 ## Adding a machine
 

@@ -1,0 +1,332 @@
+---
+# Moves a host from Debian's old `docker.io` package (Docker 20.10, no compose plugin) to Docker CE
+# from Docker's own apt repository, which is what the other Docker hosts already run.
+#
+# Every container on the host stops while the engine is swapped and starts again afterwards
+# (typically 1-3 minutes). Images, containers and volumes in /var/lib/docker are kept.
+#
+# Safety:
+#   - only hosts in the `old_docker` inventory group can be touched, and only with an explicit
+#     limit: one host per run, least important first (file-browser, cloudflared, portainer)
+#   - a Proxmox snapshot of the LXC is taken first, after checking the container ID really is
+#     this host; if anything goes wrong, roll back to it (the failure message says how)
+#   - the new packages are downloaded before the old engine is removed, to keep the outage short
+#   - afterwards every container that was running before must be running again, or the run fails
+#   - check mode shows the plan; the engine swap itself can't be simulated (Docker's repository
+#     isn't configured yet), so that step and the checks after it are skipped in check mode
+#
+# If Proxmox can't snapshot a container (its storage doesn't support snapshots), take a manual
+# backup in the Proxmox UI and run with extra_vars: docker_engine_snapshot=false
+- name: Replace Debian's docker.io with Docker CE
+  hosts: old_docker
+  become: true
+  serial: 1
+  max_fail_percentage: 0
+  gather_facts: true
+  vars:
+    docker_ce_packages: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
+    docker_old_packages: [docker.io, docker-doc, docker-compose, podman-docker, containerd, runc]
+    docker_ok_storage_drivers: [overlay2, overlayfs, fuse-overlayfs, vfs, btrfs, zfs]
+    docker_engine_snapshot: true
+    docker_min_free_mb: 1500
+    deb_arch_map:
+      x86_64: amd64
+      aarch64: arm64
+      armv7l: armhf
+    # One apt source line; the folded block joins these three lines with single spaces.
+    docker_repo_line: >-
+      deb [arch={{ deb_arch }} signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/{{ distro }}
+      {{ ansible_facts['distribution_release'] }} stable
+    undo_hint: >-
+      Proxmox UI > {{ pve_host }} > CT {{ pve_vmid }} > Snapshots > {{ snapshot_name }} > Rollback
+      (or on {{ pve_host }}: pct rollback {{ pve_vmid }} {{ snapshot_name }} && pct start {{ pve_vmid }})
+  tasks:
+    - name: Refuse to run without an explicit limit
+      ansible.builtin.assert:
+        that: ansible_limit is defined
+        fail_msg: >-
+          This playbook restarts every container on a host. Run it with limit set to ONE host
+          from the old_docker group, for example file-browser.
+        quiet: true
+
+    - name: Check the OS and CPU are ones Docker publishes packages for
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+          - ansible_facts['architecture'] in deb_arch_map
+        fail_msg: "Unsupported: {{ ansible_facts['distribution'] }} on {{ ansible_facts['architecture'] }}"
+        quiet: true
+
+    - name: Is Debian's docker.io installed?
+      ansible.builtin.command:
+        argv: [dpkg-query, -W, "-f=${Status}", docker.io]
+      register: old_pkg
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Is Docker CE installed?
+      ansible.builtin.command:
+        argv: [dpkg-query, -W, "-f=${Status}", docker-ce]
+      register: ce_pkg
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Work out what this host needs
+      ansible.builtin.set_fact:
+        has_old: "{{ 'install ok installed' in old_pkg.stdout }}"
+        has_ce: "{{ 'install ok installed' in ce_pkg.stdout }}"
+        distro: "{{ ansible_facts['distribution'] | lower }}"
+        deb_arch: "{{ deb_arch_map[ansible_facts['architecture']] }}"
+        snapshot_name: "pre_docker_ce_{{ now(utc=true, fmt='%Y%m%d_%H%M') }}"
+        snapshot_taken: false
+
+    - name: Already on Docker CE, nothing to do
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} already runs Docker CE. Remove it from the old_docker group in inventory/hosts.yml."
+      when: has_ce and not has_old
+
+    - name: Stop if neither Docker package is installed
+      ansible.builtin.assert:
+        that: has_old or has_ce
+        fail_msg: Neither docker.io nor docker-ce is installed here, which this playbook doesn't expect.
+        quiet: true
+
+    - name: Move to Docker CE
+      when: has_old
+      block:
+        # ---- Look before touching anything -------------------------------------------------
+        - name: Read the current engine version and storage driver
+          ansible.builtin.command: docker info --format {% raw %}'{{.ServerVersion}}|{{.Driver}}'{% endraw %}
+          register: info_before
+          changed_when: false
+          check_mode: false
+
+        - name: List the containers running now
+          ansible.builtin.command: docker ps --format {% raw %}'{{.Names}}'{% endraw %}
+          register: ps_before
+          changed_when: false
+          check_mode: false
+
+        - name: Check free disk space under /var/lib/docker
+          ansible.builtin.command: df -Pk /var/lib/docker
+          register: df_docker
+          changed_when: false
+          check_mode: false
+
+        - name: Remember the starting point
+          ansible.builtin.set_fact:
+            version_before: "{{ info_before.stdout.split('|')[0] }}"
+            driver_before: "{{ info_before.stdout.split('|')[1] }}"
+            running_before: "{{ ps_before.stdout_lines | map('trim') | select | list }}"
+            free_mb: "{{ (df_docker.stdout_lines[1].split()[3] | int / 1024) | int }}"
+
+        - name: Stop if the storage driver or free space would make this unsafe
+          ansible.builtin.assert:
+            that:
+              - driver_before in docker_ok_storage_drivers
+              - free_mb | int >= docker_min_free_mb
+            fail_msg: >-
+              Storage driver is '{{ driver_before }}' (current Docker supports
+              {{ docker_ok_storage_drivers | join(', ') }}) and {{ free_mb }} MB are free
+              (need {{ docker_min_free_mb }}).
+            quiet: true
+
+        - name: Ask Proxmox which container has this ID (guards against a wrong pve_vmid)
+          ansible.builtin.command: pct exec {{ pve_vmid }} -- hostname
+          delegate_to: "{{ pve_host }}"
+          register: pve_name
+          changed_when: false
+          check_mode: false
+          when: docker_engine_snapshot | bool
+
+        - name: Stop unless that container is this host
+          ansible.builtin.assert:
+            that: (pve_name.stdout | trim | lower) == (ansible_facts['hostname'] | lower)
+            fail_msg: >-
+              Proxmox container {{ pve_vmid }} on {{ pve_host }} calls itself '{{ pve_name.stdout | trim }}',
+              but this host is '{{ ansible_facts['hostname'] }}'. Fix pve_vmid in inventory/hosts.yml.
+            quiet: true
+          when: docker_engine_snapshot | bool
+
+        - name: Read the container's Proxmox settings
+          ansible.builtin.command: pct config {{ pve_vmid }}
+          delegate_to: "{{ pve_host }}"
+          register: pve_config
+          changed_when: false
+          check_mode: false
+          when: docker_engine_snapshot | bool
+
+        - name: The plan
+          ansible.builtin.debug:
+            msg:
+              - "Host: {{ inventory_hostname }} ({{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_release'] }}, {{ deb_arch }})"
+              - "Docker now: {{ version_before }} from docker.io, storage driver {{ driver_before }}, {{ free_mb }} MB free"
+              - "Running containers that will restart ({{ running_before | length }}): {{ running_before | join(', ') }}"
+              - "Proxmox: {{ pve_config.stdout_lines | default([]) | select('match', '^(features|unprivileged|rootfs):') | join(' | ') }}"
+              - "Snapshot first: {{ snapshot_name if (docker_engine_snapshot | bool) else 'SKIPPED (docker_engine_snapshot=false)' }}"
+              - "Then remove: {{ docker_old_packages | join(' ') }}"
+              - "Then install: {{ docker_ce_packages | join(' ') }}"
+
+        # ---- Way back ----------------------------------------------------------------------
+        - name: Take a Proxmox snapshot to roll back to
+          ansible.builtin.command: >-
+            pct snapshot {{ pve_vmid }} {{ snapshot_name }}
+            --description "Before docker.io to Docker CE (Ansible docker-engine.yml)"
+          delegate_to: "{{ pve_host }}"
+          changed_when: true
+          when: docker_engine_snapshot | bool
+
+        - name: Note that the snapshot exists
+          ansible.builtin.set_fact:
+            snapshot_taken: true
+          when:
+            - docker_engine_snapshot | bool
+            - not ansible_check_mode
+
+        # ---- Prepare while the old engine keeps running ------------------------------------
+        - name: Install what's needed to add Docker's repository
+          ansible.builtin.apt:
+            name: [ca-certificates, curl]
+            state: present
+            update_cache: true
+            cache_valid_time: 3600
+
+        - name: Create the apt keyring folder
+          ansible.builtin.file:
+            path: /etc/apt/keyrings
+            state: directory
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Download Docker's package signing key
+          ansible.builtin.get_url:
+            url: "https://download.docker.com/linux/{{ distro }}/gpg"
+            dest: /etc/apt/keyrings/docker.asc
+            owner: root
+            group: root
+            mode: "0644"
+
+        - name: Add Docker's apt repository
+          ansible.builtin.copy:
+            dest: /etc/apt/sources.list.d/docker.list
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              # Managed by Ansible (ansible/playbooks/docker-engine.yml)
+              {{ docker_repo_line }}
+
+        - name: Refresh the package lists
+          ansible.builtin.apt:
+            update_cache: true
+          changed_when: false
+          when: not ansible_check_mode
+
+        - name: Download the new packages before removing anything (keeps the outage short)
+          ansible.builtin.command: apt-get install -y --download-only {{ docker_ce_packages | join(' ') }}  # noqa: command-instead-of-module
+          environment:
+            DEBIAN_FRONTEND: noninteractive
+          changed_when: true
+
+        # ---- The swap: containers are down between these two tasks -------------------------
+        - name: Remove the old engine (containers stop here; data in /var/lib/docker stays)
+          ansible.builtin.apt:
+            name: "{{ docker_old_packages }}"
+            state: absent
+
+        - name: Install Docker CE (containers with a restart policy start again)
+          ansible.builtin.apt:
+            name: "{{ docker_ce_packages }}"
+            state: present
+          environment:
+            DEBIAN_FRONTEND: noninteractive
+          when: not ansible_check_mode
+
+        - name: Explain what check mode left out
+          ansible.builtin.debug:
+            msg: >-
+              Check mode: installing Docker CE can't be simulated, because Docker's repository isn't
+              configured on the host yet. A real run installs {{ docker_ce_packages | join(', ') }}
+              here, then checks that every container came back.
+          when: ansible_check_mode
+
+        # ---- Verify (real runs only) -------------------------------------------------------
+        - name: Verify the new engine
+          when: not ansible_check_mode
+          block:
+            - name: Make sure Docker is unmasked, enabled and running
+              ansible.builtin.systemd_service:
+                name: docker
+                state: started
+                enabled: true
+                masked: false
+
+            - name: Wait for the Docker daemon to answer
+              ansible.builtin.command: docker info --format {% raw %}'{{.ServerVersion}}|{{.Driver}}'{% endraw %}
+              register: info_after
+              until: info_after.rc == 0
+              retries: 12
+              delay: 5
+              changed_when: false
+
+            - name: Start anything that was running before (covers containers with no restart policy)
+              ansible.builtin.command: docker start {{ item }}
+              loop: "{{ running_before }}"
+              changed_when: false
+
+            - name: Wait until every container that was running before is running again
+              ansible.builtin.command: docker ps --format {% raw %}'{{.Names}}'{% endraw %}
+              register: ps_after
+              until: (running_before | difference(ps_after.stdout_lines | map('trim') | list)) | length == 0
+              retries: 18
+              delay: 10
+              changed_when: false
+
+            - name: Read the compose plugin version
+              ansible.builtin.command: docker compose version --short
+              register: compose_after
+              changed_when: false
+
+            - name: Result
+              ansible.builtin.debug:
+                msg:
+                  - "{{ inventory_hostname }}: Docker {{ version_before }} (docker.io) -> {{ info_after.stdout.split('|')[0] }} (Docker CE)"
+                  - "Storage driver: {{ driver_before }} -> {{ info_after.stdout.split('|')[1] }} | compose plugin {{ compose_after.stdout }}"
+                  - "All {{ running_before | length }} containers that were running before are running again. Now check your apps."
+                  - "Then remove {{ inventory_hostname }} from the old_docker group in inventory/hosts.yml."
+
+            - name: How to undo, and when to delete the snapshot
+              ansible.builtin.debug:
+                msg:
+                  - "To undo: {{ undo_hint }}"
+                  - "When you're happy (a day or two), delete it in the same place, or run: pct delsnapshot {{ pve_vmid }} {{ snapshot_name }}"
+              when: snapshot_taken
+
+      rescue:
+        - name: Failed after the snapshot was taken - say how to get back
+          ansible.builtin.fail:
+            msg: >-
+              FAILED at "{{ ansible_failed_task.name | default('unknown task') }}". See that task's
+              output above. To put {{ inventory_hostname }} back exactly as it was before this run:
+              {{ undo_hint }}
+          when: snapshot_taken
+
+        - name: Failed before any snapshot - nothing on the host was changed
+          ansible.builtin.fail:
+            msg: >-
+              FAILED at "{{ ansible_failed_task.name | default('unknown task') }}", before the engine
+              was touched. Nothing on {{ inventory_hostname }} was changed. If Proxmox said it can't
+              snapshot this container, take a manual backup (Proxmox UI > CT {{ pve_vmid }} > Backup
+              > Backup now) and run again with extra_vars: docker_engine_snapshot=false
+          when: docker_engine_snapshot | bool
+
+        - name: Failed with snapshots turned off
+          ansible.builtin.fail:
+            msg: >-
+              FAILED at "{{ ansible_failed_task.name | default('unknown task') }}" with no snapshot
+              (docker_engine_snapshot=false). Check `systemctl status docker` on
+              {{ inventory_hostname }}; if Docker is broken, restore the container from your backup.
