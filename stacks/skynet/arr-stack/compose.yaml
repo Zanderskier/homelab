@@ -36,6 +36,24 @@ services:
       - "9696:9696"
     restart: unless-stopped
 
+  flaresolverr:
+    # DockerHub mirror flaresolverr/flaresolverr:v3.5.2
+    image: ghcr.io/flaresolverr/flaresolverr:v3.5.2
+    container_name: flaresolverr
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FILE=${LOG_FILE:-none}
+      - LOG_HTML=${LOG_HTML:-false}
+      - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
+      - TZ=Europe/London
+    ports:
+      - "${PORT:-8191}:8191"
+    volumes:
+      - /var/lib/flaresolver:/config
+    tmpfs:
+      - /tmp:size=256M,mode=1777
+    restart: unless-stopped
+
   radarr:
     image: lscr.io/linuxserver/radarr:7.0.3.10918-ls328
     container_name: radarr
