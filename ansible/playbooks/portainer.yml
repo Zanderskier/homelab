@@ -468,7 +468,7 @@
             fail_msg: "{{ create_problems | join(' || ') }}"
             quiet: true
           vars:
-            create_problems: "{{ create_lines.splitlines() | map('trim') | select | list }}"
+            create_problems: "{{ (create_lines | default('', true)).splitlines() | map('trim') | select | list }}"
             create_lines: |
               {% for r in env_create.results | default([]) if not (r.skipped | default(false)) %}
               {% if r.status | default(0) not in [200, 201] %}
@@ -516,7 +516,7 @@
 
         - name: Environments, as Portainer sees them now
           ansible.builtin.debug:
-            msg: "{{ env_lines.splitlines() | map('trim') | select | list }}"
+            msg: "{{ (env_lines | default('', true)).splitlines() | map('trim') | select | list }}"
           vars:
             agent_ips: "{{ groups['portainer_agents'] | map('extract', hostvars, 'ansible_host') | list }}"
             # Prefix and suffix added separately: a "\1" backreference here would be read as an escape.
@@ -541,7 +541,7 @@
             success_msg: Every agent rolled out in this run has an environment that is up and on the right version.
           vars:
             by_url: "{{ dict(envs_after.json | map(attribute='URL') | zip(envs_after.json)) }}"
-            rollout_problems: "{{ problem_lines.splitlines() | map('trim') | select | list }}"
+            rollout_problems: "{{ (problem_lines | default('', true)).splitlines() | map('trim') | select | list }}"
             problem_lines: |
               {% for h in groups['portainer_agents'] if hostvars[h].portainer_agent_done | default(false) %}
               {% set e = by_url['tcp://' ~ hostvars[h].ansible_host ~ ':' ~ portainer_agent_port] | default({}) %}
