@@ -1,0 +1,25 @@
+# Shared by every workflow that runs Ansible on the Ansible LXC (host-mode runner, label "ansible").
+# Installs the pinned uv, the pinned Ansible (ansible/requirements.txt) and its collections into a
+# venv in the runner's home, which is reused between runs, so this is quick after the first time.
+name: Set up Ansible
+description: Install the pinned Ansible and collections on the Ansible LXC
+runs:
+  using: composite
+  steps:
+    - name: Install Ansible
+      shell: bash
+      env:
+        # renovate: datasource=github-releases depName=astral-sh/uv
+        UV_VERSION: 0.13.9
+      run: |
+        mkdir -p "$HOME/.local/bin"
+        curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" \
+          | tar -xz --strip-components=1 -C "$HOME/.local/bin"
+        "$HOME/.local/bin/uv" venv --allow-existing --python 3.13 "$HOME/.venvs/ansible"
+        "$HOME/.local/bin/uv" pip install --python "$HOME/.venvs/ansible" -r ansible/requirements.txt
+        echo "$HOME/.venvs/ansible/bin" >> "$GITHUB_PATH"
+
+    - name: Install collections
+      shell: bash
+      working-directory: ansible
+      run: '"$HOME/.venvs/ansible/bin/ansible-galaxy" collection install -r requirements.yml'

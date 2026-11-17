@@ -86,4 +86,4 @@ jobs:
         run: ansible-lint playbooks/
 
       - name: Shell scripts are valid bash
-        run: for s in ansible/bootstrap/*.sh ansible/files/*.sh; do bash -n "$s" && echo "ok  $s"; done
+        run: for s in ansible/*.sh ansible/bootstrap/*.sh ansible/files/*.sh; do bash -n "$s" && echo "ok  $s"; done

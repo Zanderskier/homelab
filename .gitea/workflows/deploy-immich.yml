@@ -1,0 +1,27 @@
+# Deploys Immich when a change to it reaches main, e.g. a merged Renovate PR that bumps
+# immich_version. Runs ansible/playbooks/immich.yml on the Ansible LXC: database dump first, then
+# deploy, then a health + version check. To run it by hand, use the ansible workflow.
+name: deploy-immich
+run-name: "immich deploy: ${{ gitea.event.head_commit.message }}"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - stacks/little-skynet/immich/**
+      - ansible/inventory/host_vars/immich.yml
+      - ansible/playbooks/immich.yml
+
+jobs:
+  deploy:
+    runs-on: ansible
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.gitea/actions/setup-ansible
+
+      - name: Deploy Immich
+        working-directory: ansible
+        env:
+          ANSIBLE_FORCE_COLOR: "1"
+        run: bash run-playbook.sh immich "an Immich change was merged to main"

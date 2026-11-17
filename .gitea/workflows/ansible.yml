@@ -1,20 +1,20 @@
 # Runs Ansible on the Ansible LXC (skynet), via the runner registered there with the "ansible" label.
 # Steps run directly on that LXC (host mode), where the Ansible SSH key lives. The key is never
 # stored in Gitea.
+#
+# This workflow: the weekly patch run, and any playbook by hand.
 #   - Every Sunday 04:30 Pacific (05:30 in summer): patch-guests (OS updates for LXCs, VMs, Pis; no reboots)
-#   - When an Immich change reaches main (e.g. a merged Renovate PR): the immich playbook
-#   - Any time, by hand: Actions tab > ansible > Run workflow > pick a playbook
-# Portainer (playbooks/portainer.yml) is run by hand for now. Once its first rollout has worked, a
-# push trigger on group_vars/portainer_hosts.yml can make a merged version bump deploy itself.
+#   - Any time: Actions tab > ansible > Run workflow > pick a playbook. Dry run is ticked by default.
+# Deploys that run by themselves when an update is merged have their own workflows:
+#   deploy-immich.yml, deploy-portainer.yml
 name: ansible
+# The name each run gets in the Actions list, e.g. "portainer - ...  [DRY RUN]".
+run-name: >-
+  ${{ inputs.playbook || 'patch-guests - weekly schedule' }}${{
+  (inputs.check_mode == true || inputs.check_mode == 'true') && '  [DRY RUN]'
+  || (inputs.playbook && '  [REAL RUN]' || '') }}
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - stacks/little-skynet/immich/**
-      - ansible/inventory/host_vars/immich.yml
-      - ansible/playbooks/immich.yml
   schedule:
     # Cron is UTC. 12:30 UTC = 04:30 PST / 05:30 PDT: always after the nightly PBS backups
     # (skynet 03:00, little-skynet 03:30), so every patch run has a fresh backup to roll back to.
@@ -22,34 +22,33 @@ on:
   workflow_dispatch:
     inputs:
       playbook:
-        description: Playbook to run
+        description: Playbook to run (the first word is the playbook)
         type: choice
         options:
-          - ping
-          - patch-guests
-          - patch-hosts
-          - users
-          - harden-ssh
-          - immich
-          - portainer-discover
-          - docker-engine
-          - portainer
-          - docker-cleanup
-        default: ping
+          - "ping - safe test, changes nothing"
+          - "patch-guests - OS updates on LXCs, VMs, Pis (runs every Sunday by itself)"
+          - "patch-hosts - Proxmox VE + PBS updates, never reboots"
+          - "immich - deploy Immich (runs by itself when an update is merged)"
+          - "portainer - Portainer server + agents (runs by itself when an update is merged)"
+          - "docker-cleanup - unused images, orphaned Portainer stacks"
+          - "portainer-discover - report only, changes nothing"
+          - "users - admin + break-glass accounts (new machine only)"
+          - "harden-ssh - keys-only SSH (new machine only)"
+        default: "ping - safe test, changes nothing"
+      check_mode:
+        description: "Dry run: show what would change, change nothing (untick to make changes)"
+        type: boolean
+        default: true
       limit:
         description: "Only these hosts or groups (optional, e.g. pis or plex,gitea)"
         type: string
         required: false
       allow_reboot:
-        description: Reboot guests that need it (Proxmox hosts are never rebooted)
-        type: boolean
-        default: false
-      check_mode:
-        description: "Dry run: show what would change, change nothing"
+        description: Reboot guests that need it (patch-guests only; Proxmox hosts are never rebooted)
         type: boolean
         default: false
       extra_vars:
-        description: "Extra variables (optional, key=value), e.g. docker_engine_snapshot=false"
+        description: "Extra variables (optional, key=value). Normally empty"
         type: string
         required: false
 
@@ -59,29 +58,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Ansible
-        env:
-          # renovate: datasource=github-releases depName=astral-sh/uv
-          UV_VERSION: 0.13.9
-        run: |
-          mkdir -p "$HOME/.local/bin"
-          curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" \
-            | tar -xz --strip-components=1 -C "$HOME/.local/bin"
-          export PATH="$HOME/.local/bin:$PATH"
-          # A venv in the runner's home: reused between runs, so this is quick after the first time.
-          uv venv --allow-existing --python 3.13 "$HOME/.venvs/ansible"
-          uv pip install --python "$HOME/.venvs/ansible" -r ansible/requirements.txt
-          echo "$HOME/.venvs/ansible/bin" >> "$GITHUB_PATH"
-
-      - name: Install collections
-        working-directory: ansible
-        run: ansible-galaxy collection install -r requirements.yml
+      - uses: ./.gitea/actions/setup-ansible
 
       - name: Run playbook
         working-directory: ansible
         env:
           EVENT: ${{ gitea.event_name }}
-          # Inputs are empty on scheduled and push runs, so these defaults apply then.
+          # Inputs are empty on the scheduled run, so these defaults apply then.
           INPUT_PLAYBOOK: ${{ inputs.playbook }}
           LIMIT: ${{ inputs.limit }}
           ALLOW_REBOOT: ${{ inputs.allow_reboot || false }}
@@ -89,22 +72,7 @@ jobs:
           EXTRA_VARS: ${{ inputs.extra_vars }}
           ANSIBLE_FORCE_COLOR: "1"
         run: |
-          case "$EVENT" in
-            push)     PLAYBOOK=immich ;;          # only Immich paths trigger a push run
-            schedule) PLAYBOOK=patch-guests ;;
-            *)        PLAYBOOK="$INPUT_PLAYBOOK" ;;
-          esac
-          case "$PLAYBOOK" in
-            ping|patch-guests|patch-hosts|users|harden-ssh|immich) ;;
-            portainer-discover|docker-engine|portainer|docker-cleanup) ;;
-            *) echo "unknown playbook '$PLAYBOOK'"; exit 1 ;;
-          esac
-          args=(-e "allow_reboot=$ALLOW_REBOOT")
-          # Secrets that must never be in Git (e.g. alex's sudo password hash) live only on this LXC.
-          [ -f /ansible_config/secrets.yml ] && args+=(-e @/ansible_config/secrets.yml)
-          # Passed as one quoted argument, so it can only ever set variables.
-          [ -n "$EXTRA_VARS" ] && args+=(-e "$EXTRA_VARS")
-          [ -n "$LIMIT" ] && args+=(--limit "$LIMIT")
-          [ "$CHECK_MODE" = "true" ] && args+=(--check --diff)
-          echo "Running playbooks/$PLAYBOOK.yml ${args[*]}"
-          ansible-playbook "playbooks/$PLAYBOOK.yml" "${args[@]}"
+          if [ "$EVENT" = "schedule" ]; then
+            exec bash run-playbook.sh patch-guests "weekly schedule (Sunday, after the PBS backups)"
+          fi
+          exec bash run-playbook.sh "${INPUT_PLAYBOOK%% *}" "started by hand from the Actions tab"

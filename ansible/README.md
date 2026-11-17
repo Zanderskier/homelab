@@ -2,11 +2,11 @@
 
 Ansible keeps the operating system of every machine up to date. It runs on its own **Ansible LXC**
 on skynet (the "control node"), which has a Gitea runner registered with the label `ansible`. The
-`ansible` workflow sends its jobs there, and Ansible connects to each machine over SSH as a dedicated
+Ansible workflows send their jobs there, and Ansible connects to each machine over SSH as a dedicated
 `ansible` user.
 
 ```
-Gitea (schedule / Run workflow) ──► Ansible LXC on skynet ──SSH──► every LXC, VM, Pi, Proxmox host
+Gitea (schedule / merge / Run workflow) ──► Ansible LXC on skynet ──SSH──► every LXC, VM, Pi, Proxmox host
                                     (runner "ansible", key lives here)
 ```
 
@@ -26,11 +26,12 @@ ansible/
     harden-ssh.yml         no root or password SSH logins (break-glass excepted, LAN/VPN only)
     immich.yml             deploys Immich at the version in host_vars/immich.yml
     portainer-discover.yml read-only report: Docker + Portainer on every host, environments, stacks
-    docker-engine.yml      one-time per host: Debian's docker.io 20.10 -> Docker CE, with a snapshot
     portainer.yml          Portainer server + standard agents, one pinned version, environments via API
-    docker-cleanup.yml     leftover containers, unused images, orphaned Portainer stack records
+    docker-cleanup.yml     unused images, orphaned Portainer stack records. Safe any time
   templates/               compose files the playbooks render onto hosts
   files/                   scripts and keys the playbooks copy to hosts
+  run-playbook.sh          what every workflow calls: prints what, why, mode and hosts first,
+                           and a one-line RESULT at the end (what changed, or "nothing needed")
   bootstrap/
     setup-control-node.sh  one-time: turns a fresh LXC into the Ansible LXC
     bootstrap-ssh.sh       one-time per machine: creates the ansible user + authorizes the key
@@ -40,10 +41,38 @@ ansible/
 
 ## When it runs
 
-| Trigger | Playbook | Reboots? |
+| Trigger | Workflow | Playbook | Reboots? |
+|---|---|---|---|
+| Every Sunday 04:30 Pacific (05:30 in summer), after the PBS backups | `ansible` | `patch-guests` | No. The summary says `REBOOT NEEDED` where one is due |
+| An Immich change is merged to main | `deploy-immich` | `immich` | No |
+| `portainer_version` changes on main (a merged Renovate PR) | `deploy-portainer` | `portainer` | No |
+| Actions → ansible → **Run workflow** | `ansible` | your choice | Only if you tick *allow_reboot* (guests only) |
+
+Each run's name in the Actions list says what it was, e.g. `portainer - ...  [DRY RUN]` or
+`portainer deploy: Update portainer/portainer-ce to v2.45.4`.
+
+### Which playbook do I run?
+
+Usually none: the schedule and the two deploy workflows cover normal operation.
+
+| Playbook | Run it when | Changes things? |
 |---|---|---|
-| Every Sunday 04:30 Pacific (05:30 in summer), after the PBS backups | `patch-guests` | No. The summary says `REBOOT NEEDED` where one is due |
-| Actions → ansible → **Run workflow** | your choice | Only if you tick *allow_reboot* (guests only) |
+| `ping` | testing that Ansible can reach everything | No |
+| `portainer-discover` | you want a report of Docker + Portainer on every host | No |
+| `patch-guests` | you want updates before Sunday | Yes |
+| `patch-hosts` | Proxmox or PBS updates are waiting (by hand only) | Yes, never reboots |
+| `docker-cleanup` | disks are filling up, or Portainer shows stacks for hosts that are gone | Yes, removes only unused things |
+| `immich`, `portainer` | a deploy failed and you've fixed the cause, or you edited a template | Yes |
+| `users`, `harden-ssh` | a new machine, or a password change | Yes |
+
+Safety on the Run workflow form:
+- **Dry run is ticked by default.** Untick it only after reading the dry run's plan.
+- The first lines of every run say what the playbook does, why it ran, the mode and every host it
+  will touch. The last lines give a `RESULT`: which hosts changed (or would change), or
+  `Nothing needed changing`. A dry run that says *nothing would change* means there's no need to
+  run it for real.
+- Skipped tasks aren't printed (`display_skipped_hosts = False` in `ansible.cfg`), so what's left is
+  what was checked or changed.
 
 ## One-time setup
 
@@ -113,8 +142,8 @@ Paste the output into `ansible/known_hosts` and commit it. Re-scan a host if you
 ### 5. Test
 
 1. Actions → **ansible** → Run workflow → playbook **ping**. Every host should be green.
-2. **patch-guests** with **check_mode** ticked: a preview of the updates, nothing applied.
-3. **patch-guests** for real with **limit** `pis`.
+2. **patch-guests**, dry run (the default): a preview of the updates, nothing applied.
+3. **patch-guests** with dry run unticked and **limit** `pis`.
 
 ### Running by hand (learning / debugging)
 
@@ -199,7 +228,7 @@ little-skynet). Ansible deploys it, not Portainer.
 Renovate PR: immich_version v3.3.5 -> v3.4.0   (host_vars/immich.yml, never auto-merged)
    │  read the release notes, merge
    ▼
-ansible workflow (triggered by the push to main)
+deploy-immich workflow (triggered by the merge to main)
    1. pg_dumpall -> /mnt/immich/immich/pre-update-dumps/immich-<old version>-<date>.sql.gz (keeps 5)
    2. docker-compose.yml from the repo (old one kept as docker-compose.yml.<date>~)
    3. IMMICH_VERSION="v3.4.0" in .env (the only line Ansible changes; password and paths untouched)
@@ -208,7 +237,7 @@ ansible workflow (triggered by the push to main)
 ```
 
 - **Changing the version by hand:** edit `immich_version` in `inventory/host_vars/immich.yml` and
-  push, or run the `immich` playbook from the Actions tab.
+  push (that deploys it), or run the `immich` playbook from the Actions tab.
 - **Release notes say "update docker-compose.yml":** paste the new upstream file into
   `stacks/little-skynet/immich/compose.yaml`, below the homelab notes, in the same PR as the version
   bump.
@@ -239,32 +268,6 @@ sudo docker compose up -d
 That restore follows Immich's backup-and-restore guide. Then set `immich_version` back in the repo
 too, so the next run doesn't upgrade again, and close or ignore Renovate's PR until the problem is
 fixed upstream.
-
-## Docker engine: moving off Debian's docker.io
-
-Three LXCs on little-skynet (file-browser, cloudflared, portainer) were built with Debian's
-`docker.io` package: Docker 20.10 from 2023, with no `docker compose` plugin. Every other Docker
-host runs Docker CE from Docker's own repository. `docker-engine` moves a host across, so every
-host can be managed the same way and `patch-guests` keeps the engine current.
-
-```
-check the Proxmox container ID is this host -> pct snapshot -> add Docker's apt repo
-  -> download the new packages -> remove docker.io (containers stop) -> install Docker CE
-  -> wait until every container that was running before is running again
-```
-
-- **One host per run.** It refuses to start without `limit`, and only hosts in the `old_docker`
-  inventory group can be touched. Order: `file-browser` (the test), `cloudflared`, `portainer`.
-- **Outage:** every container on that host restarts, typically 1-3 minutes. During `cloudflared`'s
-  run, everything published through the Cloudflare tunnel is unreachable from outside.
-- **Check mode** shows the plan (versions, containers that will restart, Proxmox settings). It can't
-  simulate installing Docker CE, because Docker's repository isn't on the host yet.
-- **Undo:** Proxmox UI → little-skynet → the CT → **Snapshots** → `pre_docker_ce_<date>` →
-  **Rollback**. The run prints the exact snapshot name. Delete the snapshot after a day or two.
-- **No snapshot support** on a container's storage: back it up by hand (CT → Backup → Backup
-  now), then run with extra_vars `docker_engine_snapshot=false`.
-- **Afterwards:** remove the host from `old_docker` in `inventory/hosts.yml`. Old `docker-compose`
-  (v1) is removed with the old engine; use `docker compose` (with a space) from then on.
 
 ## Portainer
 
@@ -310,8 +313,11 @@ API:     add an environment for any agent host that has none (add only) -> ask P
 ### Updating Portainer
 
 Renovate opens a PR that changes `portainer_version` (2.45.x patches only; never auto-merged).
-After merging, run the **portainer** playbook from the Actions tab. It upgrades the server first,
-then the agents, as Portainer's upgrade guide says.
+**Merging it deploys it:** the `deploy-portainer` workflow runs the playbook, which upgrades the
+server first, then the agents, as Portainer's upgrade guide says. Watch it in the Actions tab.
+
+Only the version file triggers a deploy. After changing `portainer.yml` or the templates, run the
+**portainer** playbook by hand: dry run first, then for real.
 
 To move to a newer LTS line, change `allowedVersions` for Portainer in `renovate.json` and
 `portainer_version` together, after reading the release notes.
@@ -346,7 +352,6 @@ keeps that window to seconds. To close it completely, add `portainer_agent_secre
 
 | Part | Hosts | What it removes |
 |---|---|---|
-| Leftover containers | `cloudflared` | `audio-book-shelf-tunnel` and `n8n-Tunnel`, from the old one-tunnel-per-app setup. Refuses any container that belongs to a compose project |
 | Unused images | every guest with Docker, except Foundry | images no container uses (`docker image prune -a`). Volumes and networks are never pruned |
 | Portainer records | `portainer` | orphaned stack records, and stack folders with no record. Their files go to `/opt/portainer/retired-stacks` (root only) first |
 

@@ -12,7 +12,8 @@ that are actually restored.
 ## Highlights
 
 - **GitOps deployments.** Portainer redeploys Docker stacks from `main`. Ansible deploys the one
-  VM-based app (Immich) and manages the OS on every host.
+  VM-based app (Immich), runs Portainer itself (one server, five agents, one pinned version) and
+  manages the OS on every host.
 - **Automated, reviewable updates.** Every image is pinned, and Renovate turns each upstream
   release into a pull request.
   - Low-risk apps **auto-merge** once CI passes and the release is 3 days old.
@@ -80,8 +81,8 @@ upstream release ─► Renovate PR ─► CI (compose valid, pinned, no secrets
                      auto-merge            review the release notes, merge
                           │                       │
                           ▼                       ▼
-              Portainer redeploys        Portainer redeploys, or for Immich:
-              within 5 minutes           Ansible dumps the DB → deploys → checks health + version
+              Portainer redeploys        Portainer redeploys, or for Immich and Portainer itself:
+              within 5 minutes           Ansible backs up → deploys → checks health + version
 ```
 
 More detail: **[docs/architecture.md](docs/architecture.md)** (design and decisions) ·
@@ -118,11 +119,13 @@ stacks/shared/cloudflared/         the Cloudflare tunnel connector
 stacks/little-skynet/immich/       deployed by Ansible, not Portainer
 ansible/                           inventory, playbooks, bootstrap scripts (see ansible/README.md)
   playbooks/  ping · patch-guests · patch-hosts · users · harden-ssh · immich ·
-              docker-engine · portainer · portainer-discover · docker-cleanup
+              portainer · portainer-discover · docker-cleanup
 .gitea/workflows/
   lint.yml        compose validation, pin check, secret scan, ansible syntax + lint
   renovate.yml    Renovate every 4 hours
-  ansible.yml     weekly patching, Immich deploys, any playbook on demand
+  ansible.yml     weekly patching, any playbook on demand (dry run by default)
+  deploy-immich.yml, deploy-portainer.yml   deploy on merge
+.gitea/actions/setup-ansible/   shared: pinned Ansible on the control node
 renovate.json     update policy: what auto-merges, what waits for review, what's locked
 docs/             architecture, CI/CD, secrets
 ```
@@ -210,7 +213,7 @@ What each label means:
 - [x] Ansible control node; weekly patching after backups; Proxmox/PBS patching
 - [x] Admin + break-glass accounts and SSH hardening on all 16 hosts
 - [x] Immich: reviewed upgrades with pre-update DB dumps, health and version checks
-- [ ] Portainer: one server + standard agents on one pinned version, managed by Ansible (built; rollout in progress)
+- [x] Portainer: one server + standard agents on one pinned version, managed by Ansible, deployed on merge
 - [x] Docker CE on every Docker host (moved the last three LXCs off Debian's docker.io 20.10)
 - [ ] Monitoring and alerting (failed jobs, backups, disk health → push notifications)
 - [ ] Gitea, Authentik, Plex, Pi-hole as code in this repo

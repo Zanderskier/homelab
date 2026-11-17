@@ -1,0 +1,29 @@
+# Upgrades Portainer when its version changes on main, e.g. a merged Renovate PR that bumps
+# portainer_version in group_vars/portainer_hosts.yml. Runs ansible/playbooks/portainer.yml on the
+# Ansible LXC: server first (data backup, redeploy, version check), then the agents one at a time,
+# then a check that every environment is up on the new version.
+#
+# Only the version file triggers it. Changes to the playbook or the compose templates don't deploy
+# by themselves: run "portainer" from the ansible workflow (dry run first) after those.
+name: deploy-portainer
+run-name: "portainer deploy: ${{ gitea.event.head_commit.message }}"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ansible/inventory/group_vars/portainer_hosts.yml
+
+jobs:
+  deploy:
+    runs-on: ansible
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.gitea/actions/setup-ansible
+
+      - name: Deploy Portainer
+        working-directory: ansible
+        env:
+          ANSIBLE_FORCE_COLOR: "1"
+        run: bash run-playbook.sh portainer "group_vars/portainer_hosts.yml changed on main"

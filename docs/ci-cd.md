@@ -14,7 +14,8 @@ lint workflow ── compose config valid? every image pinned? no secrets?
    │
    ▼
 main branch ── Portainer GitOps polling (5 min) ──► docker compose up -d on the host
-            └─ Immich only: the ansible workflow ──► DB dump, deploy, health + version check
+            ├─ Immich: deploy-immich workflow ──► DB dump, deploy, health + version check
+            └─ Portainer: deploy-portainer workflow ──► data backup, server, agents, version check
 ```
 
 ## Update policy (`renovate.json`)

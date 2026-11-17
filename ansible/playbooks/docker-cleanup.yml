@@ -1,64 +1,23 @@
 ---
-# Housekeeping. Three independent parts; use limit to run only some hosts.
+# Housekeeping. Safe to run any time: when there's nothing to clean, it changes nothing.
+# Two independent parts; use limit to run only some hosts.
 #
-#   1. cloudflared host: remove the leftover containers from the old one-tunnel-per-app setup.
-#   2. Every Docker guest except Foundry: remove images that no container uses any more
+#   1. Every Docker guest except Foundry: remove images that no container uses any more
 #      (old versions left behind by updates). Volumes and networks are never pruned.
-#   3. Portainer: remove orphaned stack records (stacks whose environment no longer exists) and
+#   2. Portainer: remove orphaned stack records (stacks whose environment no longer exists) and
 #      stack folders that have no record. Their files are moved to /opt/portainer/retired-stacks
 #      first, readable by root only, so nothing is lost.
 #
-# Why part 3 goes through the API in this careful way: when Portainer deletes a stack it runs
+# Why part 2 goes through the API in this careful way: when Portainer deletes a stack it runs
 # that stack's teardown (docker compose down for its project name) on WHICHEVER environment the
 # request names. An orphan called "arr-stack" deleted "through" the live Arr-Stack environment
 # would take the live arr-stack down. So each orphan is deleted through an environment that is
 # first checked to have no container with that project name.
 #
 # Check mode lists what would be removed and removes nothing.
-- name: Remove leftover tunnel containers
-  hosts: cloudflared
-  become: true
-  gather_facts: false
-  vars:
-    leftover_containers: [audio-book-shelf-tunnel, n8n-Tunnel]
-  tasks:
-    - name: Look for each leftover container
-      ansible.builtin.command: docker inspect {{ item }}
-      loop: "{{ leftover_containers }}"
-      register: leftover_inspect
-      changed_when: false
-      failed_when: false
-      check_mode: false
-      no_log: true   # their command lines hold old tunnel tokens
-
-    - name: Work out which exist, and whether any belongs to a compose project
-      ansible.builtin.set_fact:
-        leftover_present: "{{ leftover_inspect.results | selectattr('rc', 'equalto', 0) | map(attribute='item') | list }}"
-        leftover_in_stack: "{{ (stack_lines | default('', true)).splitlines() | map('trim') | select | list }}"
-      vars:
-        stack_lines: |
-          {% for r in leftover_inspect.results if r.rc == 0 %}
-          {% set c = r.stdout | from_json | first %}
-          {% if (c.Config.Labels or {}).get('com.docker.compose.project') %}
-          {{ r.item }}
-          {% endif %}
-          {% endfor %}
-
-    - name: Stop if one of them is part of a compose project (then it isn't a leftover)
-      ansible.builtin.assert:
-        that: leftover_in_stack | length == 0
-        fail_msg: "These belong to a compose project, so they were left alone: {{ leftover_in_stack | join(', ') }}"
-        quiet: true
-
-    - name: The plan
-      ansible.builtin.debug:
-        msg: "{{ ('Will remove: ' ~ (leftover_present | join(', '))) if leftover_present else 'No leftover containers found.' }}"
-
-    - name: Remove the leftover containers
-      ansible.builtin.command: docker rm -f {{ item }}
-      loop: "{{ leftover_present }}"
-      changed_when: true
-
+#
+# (A third part, removing the leftover one-tunnel-per-app containers on cloudflared, ran once on
+# 2026-11-17 and was then taken out. It's in the Git history if it's ever needed again.)
 - name: Remove unused Docker images
   hosts: guests:!foundry-dnd
   become: true

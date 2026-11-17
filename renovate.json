@@ -18,9 +18,10 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Tool versions in workflows, marked with a '# renovate:' comment on the line above",
+      "description": "Tool versions in workflows and shared actions, marked with a '# renovate:' comment on the line above",
       "managerFilePatterns": [
-        "/(^|/)\\.gitea/workflows/[^/]+\\.ya?ml$/"
+        "/(^|/)\\.gitea/workflows/[^/]+\\.ya?ml$/",
+        "/(^|/)\\.gitea/actions/.+\\.ya?ml$/"
       ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+[A-Z_]+:\\s*(?<currentValue>\\S+)"
@@ -146,7 +147,8 @@
     {
       "description": "CI tooling (workflow actions, docker compose, Renovate itself) auto-merges on minor/patch",
       "matchFileNames": [
-        ".gitea/workflows/**"
+        ".gitea/workflows/**",
+        ".gitea/actions/**"
       ],
       "matchUpdateTypes": [
         "minor",
