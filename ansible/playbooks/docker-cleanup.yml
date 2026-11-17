@@ -1,0 +1,299 @@
+---
+# Housekeeping. Three independent parts; use limit to run only some hosts.
+#
+#   1. cloudflared host: remove the leftover containers from the old one-tunnel-per-app setup.
+#   2. Every Docker guest except Foundry: remove images that no container uses any more
+#      (old versions left behind by updates). Volumes and networks are never pruned.
+#   3. Portainer: remove orphaned stack records (stacks whose environment no longer exists) and
+#      stack folders that have no record. Their files are moved to /opt/portainer/retired-stacks
+#      first, readable by root only, so nothing is lost.
+#
+# Why part 3 goes through the API in this careful way: when Portainer deletes a stack it runs
+# that stack's teardown (docker compose down for its project name) on WHICHEVER environment the
+# request names. An orphan called "arr-stack" deleted "through" the live Arr-Stack environment
+# would take the live arr-stack down. So each orphan is deleted through an environment that is
+# first checked to have no container with that project name.
+#
+# Check mode lists what would be removed and removes nothing.
+- name: Remove leftover tunnel containers
+  hosts: cloudflared
+  become: true
+  gather_facts: false
+  vars:
+    leftover_containers: [audio-book-shelf-tunnel, n8n-Tunnel]
+  tasks:
+    - name: Look for each leftover container
+      ansible.builtin.command: docker inspect {{ item }}
+      loop: "{{ leftover_containers }}"
+      register: leftover_inspect
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      no_log: true   # their command lines hold old tunnel tokens
+
+    - name: Work out which exist, and whether any belongs to a compose project
+      ansible.builtin.set_fact:
+        leftover_present: "{{ leftover_inspect.results | selectattr('rc', 'equalto', 0) | map(attribute='item') | list }}"
+        leftover_in_stack: "{{ stack_lines.splitlines() | map('trim') | select | list }}"
+      vars:
+        stack_lines: |
+          {% for r in leftover_inspect.results if r.rc == 0 %}
+          {% set c = r.stdout | from_json | first %}
+          {% if (c.Config.Labels or {}).get('com.docker.compose.project') %}
+          {{ r.item }}
+          {% endif %}
+          {% endfor %}
+
+    - name: Stop if one of them is part of a compose project (then it isn't a leftover)
+      ansible.builtin.assert:
+        that: leftover_in_stack | length == 0
+        fail_msg: "These belong to a compose project, so they were left alone: {{ leftover_in_stack | join(', ') }}"
+        quiet: true
+
+    - name: The plan
+      ansible.builtin.debug:
+        msg: "{{ ('Will remove: ' ~ (leftover_present | join(', '))) if leftover_present else 'No leftover containers found.' }}"
+
+    - name: Remove the leftover containers
+      ansible.builtin.command: docker rm -f {{ item }}
+      loop: "{{ leftover_present }}"
+      changed_when: true
+
+- name: Remove unused Docker images
+  hosts: guests:!foundry-dnd
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Is Docker running here?
+      ansible.builtin.command: docker info --format {% raw %}'{{.ServerVersion}}'{% endraw %}
+      register: docker_here
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Clean up images
+      when: docker_here.rc == 0
+      block:
+        - name: Read what Docker says it can reclaim
+          ansible.builtin.command: docker system df
+          register: df_before
+          changed_when: false
+          check_mode: false
+
+        - name: Before
+          ansible.builtin.debug:
+            msg: "{{ df_before.stdout_lines }}"
+
+        - name: Remove images that no container (running or stopped) uses
+          ansible.builtin.command: docker image prune -a -f
+          register: prune
+          changed_when: "'Total reclaimed space: 0B' not in prune.stdout"
+
+        - name: Result
+          ansible.builtin.debug:
+            msg: "{{ prune.stdout_lines | select('match', '^Total reclaimed space') | list }}"
+          when: not ansible_check_mode
+
+- name: Remove orphaned stack records from Portainer
+  hosts: portainer_server
+  become: true
+  gather_facts: false
+  vars:
+    api_headers:
+      X-API-Key: "{{ portainer_api_token | default('') }}"
+    retired_dir: "{{ portainer_server_dir }}/retired-stacks"
+    # Orphans are deleted through this host's environment. It only runs CI containers.
+    safe_env_host: gitea-runner
+    safe_env_url: "tcp://{{ hostvars[safe_env_host].ansible_host }}:{{ portainer_agent_port }}"
+  tasks:
+    - name: Stop without an API token
+      ansible.builtin.assert:
+        that: portainer_api_token is defined
+        fail_msg: This part needs portainer_api_token in /ansible_config/secrets.yml.
+        quiet: true
+
+    - name: Get the environments
+      ansible.builtin.uri:
+        url: "{{ portainer_url }}/api/endpoints"
+        headers: "{{ api_headers }}"
+        validate_certs: false
+        return_content: true
+      delegate_to: localhost
+      become: false
+      register: pt_endpoints
+      check_mode: false
+      no_log: true
+
+    - name: Get the stacks
+      ansible.builtin.uri:
+        url: "{{ portainer_url }}/api/stacks"
+        headers: "{{ api_headers }}"
+        validate_certs: false
+        return_content: true
+      delegate_to: localhost
+      become: false
+      register: pt_stacks
+      check_mode: false
+      no_log: true
+
+    - name: Work out the orphans (compose stacks whose environment is gone)
+      ansible.builtin.set_fact:
+        safe_env: "{{ pt_endpoints.json | selectattr('URL', 'equalto', safe_env_url) | list | first | default({}) }}"
+        orphans: "{{ orphan_objs | map(attribute='Id') | zip(orphan_objs | map(attribute='Name')) | list }}"
+        orphans_skipped: "{{ gone | rejectattr('Type', 'equalto', 2) | map(attribute='Name') | list }}"
+      vars:
+        env_ids: "{{ pt_endpoints.json | map(attribute='Id') | list }}"
+        gone: "{{ pt_stacks.json | rejectattr('EndpointId', 'in', env_ids) | list }}"
+        orphan_objs: "{{ gone | selectattr('Type', 'equalto', 2) | list }}"
+
+    - name: Find Portainer's data folder
+      ansible.builtin.command: docker volume inspect -f {% raw %}'{{.Mountpoint}}'{% endraw %} {{ portainer_data_volume }}
+      register: data_volume
+      changed_when: false
+      check_mode: false
+
+    - name: List the stack folders on disk
+      ansible.builtin.command: find {{ data_volume.stdout | trim }}/compose -mindepth 1 -maxdepth 1 -type d -printf '%f\n'
+      register: stack_folders
+      changed_when: false
+      check_mode: false
+
+    - name: Work out which folders have no stack record at all
+      ansible.builtin.set_fact:
+        data_dir: "{{ data_volume.stdout | trim }}"
+        folders_no_record: "{{ stack_folders.stdout_lines | map('trim') | select | difference(record_ids) | list }}"
+      vars:
+        record_ids: "{{ pt_stacks.json | map(attribute='Id') | map('string') | list }}"
+
+    - name: Nothing to remove
+      ansible.builtin.debug:
+        msg: Portainer has no orphaned stack records and no stack folders without a record.
+      when:
+        - orphans | length == 0
+        - folders_no_record | length == 0
+
+    - name: Remove orphaned records
+      when: orphans | length > 0
+      block:
+        - name: Stop unless the environment used for the deletes exists and is up
+          ansible.builtin.assert:
+            that:
+              - safe_env.Id is defined
+              - safe_env.Status == 1
+            fail_msg: "No environment with URL {{ safe_env_url }} is up in Portainer, so orphans can't be deleted safely."
+            quiet: true
+
+        - name: Check that environment has no container using an orphan's project name
+          ansible.builtin.uri:
+            url: >-
+              {{ portainer_url }}/api/endpoints/{{ safe_env.Id }}/docker/containers/json?all=true&filters={{
+              {'label': ['com.docker.compose.project=' ~ (item.1 | lower)]} | to_json | urlencode }}
+            headers: "{{ api_headers }}"
+            validate_certs: false
+            return_content: true
+          delegate_to: localhost
+          become: false
+          loop: "{{ orphans }}"
+          loop_control:
+            label: "{{ item.1 }}"
+          register: clash
+          failed_when: false
+          check_mode: false
+          no_log: true
+
+        - name: Stop if it does, or if that couldn't be checked (deleting would take those containers down)
+          ansible.builtin.assert:
+            that: clashing | length == 0
+            fail_msg: >-
+              Environment '{{ safe_env.Name }}' has containers in a compose project with one of these
+              names, or the check itself failed: {{ clashing | join(', ') }}. Nothing was deleted.
+              Pick another safe_env_host in playbooks/docker-cleanup.yml.
+            quiet: true
+          vars:
+            clashing: "{{ clash_lines.splitlines() | map('trim') | select | list }}"
+            clash_lines: |
+              {% for r in clash.results %}
+              {% if r.json is not defined or (r.json | length) > 0 %}
+              {{ r.item.1 }}
+              {% endif %}
+              {% endfor %}
+
+        - name: The plan
+          ansible.builtin.debug:
+            msg:
+              - "Orphaned stack records to remove: {{ orphans | map('join', ' ') | join(', ') }}"
+              - "Deleted through environment '{{ safe_env.Name }}' (id {{ safe_env.Id }}), which has no container with those project names."
+              - "Their files are copied to {{ retired_dir }} first."
+              - "{{ ('Not touched (not compose stacks): ' ~ (orphans_skipped | join(', '))) if orphans_skipped else 'No other orphan types.' }}"
+
+        - name: Create the folder for retired stack files
+          ansible.builtin.file:
+            path: "{{ retired_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0700"
+
+        - name: Keep a copy of each orphan's files
+          ansible.builtin.command: cp -a {{ data_dir }}/compose/{{ item.0 }} {{ retired_dir }}/{{ item.0 }}-{{ item.1 }}
+          args:
+            removes: "{{ data_dir }}/compose/{{ item.0 }}"
+            creates: "{{ retired_dir }}/{{ item.0 }}-{{ item.1 }}"
+          loop: "{{ orphans }}"
+          loop_control:
+            label: "{{ item.1 }}"
+
+        - name: Delete each orphaned stack record
+          ansible.builtin.uri:
+            url: "{{ portainer_url }}/api/stacks/{{ item.0 }}?endpointId={{ safe_env.Id }}&external=false"
+            method: DELETE
+            headers: "{{ api_headers }}"
+            validate_certs: false
+            return_content: true
+            status_code: [200, 204]
+            timeout: 120
+          delegate_to: localhost
+          become: false
+          loop: "{{ orphans }}"
+          loop_control:
+            label: "{{ item.1 }}"
+          register: orphan_delete
+          failed_when: false
+          no_log: true
+
+        - name: Stop if a delete failed
+          ansible.builtin.assert:
+            that: delete_problems | length == 0
+            fail_msg: "{{ delete_problems | join(' || ') }}"
+            success_msg: "Removed: {{ orphans | map('join', ' ') | join(', ') }}"
+          vars:
+            delete_problems: "{{ delete_lines.splitlines() | map('trim') | select | list }}"
+            delete_lines: |
+              {% for r in orphan_delete.results | default([]) if not (r.skipped | default(false)) %}
+              {% if r.status | default(0) not in [200, 204] %}
+              stack {{ r.item | join(' ') }}: HTTP {{ r.status | default('?') }} {{ (r.json | default({})).message | default(r.msg | default('')) }}
+              {% endif %}
+              {% endfor %}
+          when: not ansible_check_mode
+
+    - name: Retire stack folders that have no record
+      when: folders_no_record | length > 0
+      block:
+        - name: The plan for folders
+          ansible.builtin.debug:
+            msg: "Stack folders with no record, to be moved to {{ retired_dir }}: {{ folders_no_record | join(', ') }}"
+
+        - name: Create the folder for retired stack files
+          ansible.builtin.file:
+            path: "{{ retired_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0700"
+
+        - name: Move each folder out of Portainer's data
+          ansible.builtin.command: mv {{ data_dir }}/compose/{{ item }} {{ retired_dir }}/{{ item }}-no-record
+          args:
+            removes: "{{ data_dir }}/compose/{{ item }}"
+            creates: "{{ retired_dir }}/{{ item }}-no-record"
+          loop: "{{ folders_no_record }}"
