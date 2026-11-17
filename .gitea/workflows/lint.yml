@@ -67,7 +67,7 @@ jobs:
       - name: Install Ansible
         env:
           # renovate: datasource=github-releases depName=astral-sh/uv
-          UV_VERSION: 0.13.8
+          UV_VERSION: 0.13.9
         run: |
           curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" \
             | tar -xz --strip-components=1 -C /usr/local/bin
