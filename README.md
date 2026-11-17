@@ -211,7 +211,7 @@ What each label means:
 - [x] Admin + break-glass accounts and SSH hardening on all 16 hosts
 - [x] Immich: reviewed upgrades with pre-update DB dumps, health and version checks
 - [ ] Portainer: one server + standard agents on one pinned version, managed by Ansible (built; rollout in progress)
-- [ ] Docker CE on every Docker host (three LXCs still on Debian's docker.io 20.10)
+- [x] Docker CE on every Docker host (moved the last three LXCs off Debian's docker.io 20.10)
 - [ ] Monitoring and alerting (failed jobs, backups, disk health → push notifications)
 - [ ] Gitea, Authentik, Plex, Pi-hole as code in this repo
 - [ ] Managed switch + VLANs (management / servers / trusted / IoT / guest)

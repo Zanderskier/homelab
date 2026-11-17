@@ -83,7 +83,7 @@
 
         - name: Environments
           ansible.builtin.debug:
-            msg: "{{ env_lines.splitlines() | map('trim') | select | list }}"
+            msg: "{{ (env_lines | default('', true)).splitlines() | map('trim') | select | list }}"
           vars:
             env_lines: |
               {% for e in pt_endpoints.json | sort(attribute='Id') %}
@@ -96,7 +96,7 @@
 
         - name: Stacks
           ansible.builtin.debug:
-            msg: "{{ stack_lines.splitlines() | map('trim') | select | list }}"
+            msg: "{{ (stack_lines | default('', true)).splitlines() | map('trim') | select | list }}"
           vars:
             env_names: "{{ dict(pt_endpoints.json | map(attribute='Id') | map('string') | zip(pt_endpoints.json | map(attribute='Name'))) }}"
             stack_lines: |
