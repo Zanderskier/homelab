@@ -160,12 +160,15 @@
           when: docker_engine_snapshot | bool
 
         - name: The plan
+          vars:
+            bind_mounts: "{{ pve_config.stdout_lines | default([]) | select('match', '^mp[0-9]+: /') | list }}"
           ansible.builtin.debug:
             msg:
               - "Host: {{ inventory_hostname }} ({{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_release'] }}, {{ deb_arch }})"
               - "Docker now: {{ version_before }} from docker.io, storage driver {{ driver_before }}, {{ free_mb }} MB free"
               - "Running containers that will restart ({{ running_before | length }}): {{ running_before | join(', ') }}"
-              - "Proxmox: {{ pve_config.stdout_lines | default([]) | select('match', '^(features|unprivileged|rootfs):') | join(' | ') }}"
+              - "Proxmox: {{ pve_config.stdout_lines | default([]) | select('match', '^(features|unprivileged|rootfs|mp[0-9]+):') | join(' | ') }}"
+              - "Bind mounts (Proxmox can't snapshot a container that has any): {{ bind_mounts | join(' | ') | default('none', true) }}"
               - "Snapshot first: {{ snapshot_name if (docker_engine_snapshot | bool) else 'SKIPPED (docker_engine_snapshot=false)' }}"
               - "Then remove: {{ docker_old_packages | join(' ') }}"
               - "Then install: {{ docker_ce_packages | join(' ') }}"
