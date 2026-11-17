@@ -1,0 +1,557 @@
+---
+# Portainer, managed as one unit: a single server and a standard agent on every other host that
+# should show up in it, all on the one version in group_vars/portainer_hosts.yml.
+#
+#   1. Server: back up its data, then (re)deploy from /opt/portainer/compose.yaml, keeping the
+#      existing data volume. Stacks and their variables live in that volume and are not touched.
+#   2. Agents, one host at a time: deploy from /opt/portainer-agent/compose.yaml, replacing whatever
+#      agent container was there (docker run, another compose file, or an Edge agent).
+#   3. Environments: through the API, add an environment for any agent host that has none, then
+#      check that every agent rolled out in this run is up and on the right version.
+#
+# Order matters and follows Portainer's upgrade guide: server first, then agents.
+# Needs `docker compose` on every host (docker-engine.yml installs it on the old hosts).
+# Nothing is deleted: old config files are renamed to <name>.retired, and environments are only
+# ever added. Check mode shows the plan and each file change without touching a container.
+- name: Portainer server
+  hosts: portainer_server
+  become: true
+  gather_facts: false
+  vars:
+    target_image: "portainer/portainer-ce:{{ portainer_version }}"
+    no_container:
+      Config: { Image: none, Labels: {} }
+      State: { Running: false }
+  tasks:
+    - name: Is the compose plugin installed?
+      ansible.builtin.command: docker compose version --short
+      register: compose_plugin
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Stop if it isn't
+      ansible.builtin.assert:
+        that: compose_plugin.rc == 0
+        fail_msg: This host has no `docker compose`. Run the docker-engine playbook for it first.
+        quiet: true
+
+    - name: Find the existing data volume
+      ansible.builtin.command: docker volume inspect -f {% raw %}'{{.Mountpoint}}'{% endraw %} {{ portainer_data_volume }}
+      register: data_volume
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Stop if the data volume is missing (never start an empty Portainer)
+      ansible.builtin.assert:
+        that: data_volume.rc == 0
+        fail_msg: >-
+          Docker volume '{{ portainer_data_volume }}' doesn't exist on this host. Check
+          portainer_data_volume in group_vars/portainer_hosts.yml against `docker volume ls`.
+        quiet: true
+
+    - name: Read the current server container
+      ansible.builtin.command: docker inspect portainer
+      register: server_inspect
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Ask the running server for its version
+      ansible.builtin.uri:
+        url: https://127.0.0.1:9443/api/system/status
+        validate_certs: false
+        return_content: true
+      register: status_before
+      failed_when: false
+      check_mode: false
+
+    - name: Work out the current state
+      ansible.builtin.set_fact:
+        data_dir: "{{ data_volume.stdout | trim }}"
+        server_image: "{{ current.Config.Image }}"
+        server_running: "{{ current.State.Running }}"
+        server_project: "{{ (current.Config.Labels or {}).get('com.docker.compose.project', '') }}"
+        version_before: "{{ (status_before.json | default({})).Version | default('unknown') }}"
+        backup_file: "{{ portainer_server_dir }}/backups/portainer-data-{{ running_version }}-{{ now(utc=true, fmt='%Y%m%d-%H%M%S') }}.tar.gz"
+      vars:
+        current: "{{ (server_inspect.stdout | from_json | first) if server_inspect.rc == 0 else no_container }}"
+        running_version: "{{ (status_before.json | default({})).Version | default('unknown') }}"
+
+    - name: Create the config folders
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ portainer_server_dir }}", mode: "0750" }
+        - { path: "{{ portainer_server_dir }}/backups", mode: "0700" }
+
+    - name: Install the compose file
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/portainer-server.compose.yaml.j2"
+        dest: "{{ portainer_server_dir }}/compose.yaml"
+        owner: root
+        group: root
+        mode: "0600"
+      register: compose_file
+
+    - name: List the reasons to (re)deploy
+      ansible.builtin.set_fact:
+        server_reasons: "{{ reasons | select | list }}"
+      vars:
+        reasons:
+          - "{{ 'the compose file changed' if compose_file is changed else '' }}"
+          - "{{ 'the container is not running' if not (server_running | bool) else '' }}"
+          - "{{ ('it runs ' ~ server_image ~ ' instead of ' ~ target_image) if server_image != target_image else '' }}"
+          - "{{ 'it was not started from this compose file' if server_project != 'portainer' else '' }}"
+
+    - name: The plan
+      ansible.builtin.debug:
+        msg:
+          - "Server now: {{ server_image }} (version {{ version_before }}), running: {{ server_running }}"
+          - "Target: {{ target_image }}, data volume {{ portainer_data_volume }} at {{ data_dir }} (kept)"
+          - "{{ ('Will back up the data and redeploy because: ' ~ (server_reasons | join('; '))) if server_reasons else 'Nothing to do.' }}"
+
+    - name: Deploy the server
+      when: server_reasons | length > 0
+      block:
+        - name: Pull the new image while the old server keeps running
+          ansible.builtin.command: docker compose pull
+          args:
+            chdir: "{{ portainer_server_dir }}"
+          changed_when: true
+
+        - name: Stop the old server so its data can be copied consistently
+          ansible.builtin.command: docker stop portainer
+          changed_when: true
+          when: server_image != 'none'
+
+        - name: Back up the server's data (stacks, environments, users, settings)
+          ansible.builtin.command:
+            argv: [tar, -czf, "{{ backup_file }}", -C, "{{ data_dir }}", "."]
+          changed_when: true
+
+        - name: Make the backup readable by root only (it contains secrets)
+          ansible.builtin.file:
+            path: "{{ backup_file }}"
+            owner: root
+            group: root
+            mode: "0600"
+          when: not ansible_check_mode
+
+        - name: Keep only the newest backups
+          ansible.builtin.shell: |
+            set -o pipefail
+            ls -1t portainer-data-*.tar.gz | tail -n +{{ portainer_backups_to_keep + 1 }} | xargs -r rm -f --
+          args:
+            chdir: "{{ portainer_server_dir }}/backups"
+            executable: /bin/bash
+          changed_when: false
+
+        - name: Remove the old container (the data volume stays)
+          ansible.builtin.command: docker rm -f portainer
+          changed_when: true
+          when: server_image != 'none'
+
+        - name: Start the server from the managed compose file
+          ansible.builtin.command: docker compose up -d
+          args:
+            chdir: "{{ portainer_server_dir }}"
+          changed_when: true
+
+        - name: Wait for the server to answer on version {{ portainer_version }}
+          ansible.builtin.uri:
+            url: https://127.0.0.1:9443/api/system/status
+            validate_certs: false
+            return_content: true
+          register: status_after
+          until:
+            - status_after.status == 200
+            - (status_after.json | default({})).Version | default('') == portainer_version
+          retries: 36
+          delay: 5
+          when: not ansible_check_mode
+
+      rescue:
+        - name: Try to start whichever portainer container exists, so the UI isn't left down
+          ansible.builtin.command: docker start portainer
+          register: restart_attempt
+          changed_when: restart_attempt.rc == 0
+          failed_when: false
+
+        - name: Say what state the server is in and how to go back
+          ansible.builtin.fail:
+            msg: >-
+              FAILED at "{{ ansible_failed_task.name | default('unknown task') }}". Your apps keep
+              running; only the Portainer UI is affected. A restart of the existing portainer
+              container was {{ 'attempted and Docker accepted it' if restart_attempt.rc | default(1) == 0 else 'not possible' }}.
+              Look at `docker logs portainer` on this host. The data as it was before this run is in
+              {{ backup_file }} (if the backup task ran). ansible/README.md, "Portainer > Rolling
+              back the server", has the restore steps.
+
+    - name: Is /root/portainer a real folder?
+      ansible.builtin.stat:
+        path: /root/portainer
+      register: root_link
+
+    - name: Move an old real folder out of the way
+      ansible.builtin.command: mv /root/portainer /root/portainer.retired
+      args:
+        creates: /root/portainer.retired
+      when:
+        - root_link.stat.exists
+        - root_link.stat.isdir
+        - not root_link.stat.islnk
+
+    - name: Link /root/portainer to the config folder
+      ansible.builtin.file:
+        src: "{{ portainer_server_dir }}"
+        dest: /root/portainer
+        state: link
+        force: true
+
+    - name: Link the data volume into the config folder, so it's easy to find
+      ansible.builtin.file:
+        src: "{{ data_dir }}"
+        dest: "{{ portainer_server_dir }}/data"
+        state: link
+        force: true
+
+    - name: Retire old config files (renamed, not deleted)
+      ansible.builtin.command: mv -n {{ item }} {{ item }}.retired
+      args:
+        removes: "{{ item }}"
+        creates: "{{ item }}.retired"
+      loop: "{{ portainer_retire | default([]) }}"
+
+- name: Portainer agents
+  hosts: portainer_agents
+  become: true
+  serial: 1
+  max_fail_percentage: 0
+  gather_facts: false
+  vars:
+    target_image: "portainer/agent:{{ portainer_version }}"
+    no_container:
+      Config: { Image: none, Labels: {} }
+      State: { Running: false }
+  tasks:
+    - name: Is the compose plugin installed?
+      ansible.builtin.command: docker compose version --short
+      register: compose_plugin
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Stop if it isn't
+      ansible.builtin.assert:
+        that: compose_plugin.rc == 0
+        fail_msg: This host has no `docker compose`. Run the docker-engine playbook for it first.
+        quiet: true
+
+    - name: Read the current agent container
+      ansible.builtin.command: docker inspect portainer_agent
+      register: agent_inspect
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Is there an Edge agent container?
+      ansible.builtin.command: docker inspect portainer_edge_agent
+      register: edge_inspect
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Work out the current state
+      ansible.builtin.set_fact:
+        agent_image: "{{ current.Config.Image }}"
+        agent_running: "{{ current.State.Running }}"
+        agent_project: "{{ (current.Config.Labels or {}).get('com.docker.compose.project', '') }}"
+        edge_present: "{{ edge_inspect.rc == 0 }}"
+      vars:
+        current: "{{ (agent_inspect.stdout | from_json | first) if agent_inspect.rc == 0 else no_container }}"
+
+    - name: Create the config folder
+      ansible.builtin.file:
+        path: "{{ portainer_agent_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Install the compose file
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/portainer-agent.compose.yaml.j2"
+        dest: "{{ portainer_agent_dir }}/compose.yaml"
+        owner: root
+        group: root
+        mode: "0600"
+      register: compose_file
+
+    - name: List the reasons to (re)deploy
+      ansible.builtin.set_fact:
+        agent_reasons: "{{ reasons | select | list }}"
+      vars:
+        reasons:
+          - "{{ 'the compose file changed' if compose_file is changed else '' }}"
+          - "{{ 'no agent is running' if not (agent_running | bool) else '' }}"
+          - "{{ ('it runs ' ~ agent_image ~ ' instead of ' ~ target_image) if agent_image != target_image else '' }}"
+          - "{{ 'it was not started from this compose file' if agent_project != 'portainer-agent' else '' }}"
+          - "{{ 'an Edge agent container is present' if (edge_present | bool) else '' }}"
+
+    - name: The plan
+      ansible.builtin.debug:
+        msg:
+          - "Agent now: {{ agent_image }}, running: {{ agent_running }}, Edge agent present: {{ edge_present }}"
+          - "Target: {{ target_image }} on port {{ portainer_agent_port }}"
+          - "{{ ('Will (re)deploy because: ' ~ (agent_reasons | join('; '))) if agent_reasons else 'Nothing to do.' }}"
+
+    - name: Deploy the agent
+      when: agent_reasons | length > 0
+      block:
+        - name: Pull the new image while the old agent keeps running
+          ansible.builtin.command: docker compose pull
+          args:
+            chdir: "{{ portainer_agent_dir }}"
+          changed_when: true
+
+        - name: Remove the Edge agent container
+          ansible.builtin.command: docker rm -f portainer_edge_agent
+          changed_when: true
+          when: edge_present | bool
+
+        - name: Remove the old agent container
+          ansible.builtin.command: docker rm -f portainer_agent
+          changed_when: true
+          when:
+            - agent_image != 'none'
+            - agent_project != 'portainer-agent'
+
+        - name: Start the agent from the managed compose file
+          ansible.builtin.command: docker compose up -d
+          args:
+            chdir: "{{ portainer_agent_dir }}"
+          changed_when: true
+
+    - name: Wait for the agent to answer on version {{ portainer_version }}
+      ansible.builtin.uri:
+        url: "https://127.0.0.1:{{ portainer_agent_port }}/ping"
+        validate_certs: false
+        status_code: [200, 204]
+      register: agent_ping
+      until:
+        - agent_ping.status | default(0) in [200, 204]
+        - agent_ping.portainer_agent | default('') == portainer_version
+      retries: 24
+      delay: 5
+      when: not ansible_check_mode
+
+    - name: Remember this agent was rolled out in this run
+      ansible.builtin.set_fact:
+        portainer_agent_done: true
+      when: not ansible_check_mode
+
+    - name: Is /root/portainer a real folder?
+      ansible.builtin.stat:
+        path: /root/portainer
+      register: root_link
+
+    - name: Move an old real folder out of the way
+      ansible.builtin.command: mv /root/portainer /root/portainer.retired
+      args:
+        creates: /root/portainer.retired
+      when:
+        - root_link.stat.exists
+        - root_link.stat.isdir
+        - not root_link.stat.islnk
+
+    - name: Link /root/portainer to the config folder
+      ansible.builtin.file:
+        src: "{{ portainer_agent_dir }}"
+        dest: /root/portainer
+        state: link
+        force: true
+
+    - name: Retire old config files (renamed, not deleted)
+      ansible.builtin.command: mv -n {{ item }} {{ item }}.retired
+      args:
+        removes: "{{ item }}"
+        creates: "{{ item }}.retired"
+      loop: "{{ portainer_retire | default([]) }}"
+
+- name: Portainer environments
+  hosts: portainer_server
+  become: false
+  gather_facts: false
+  vars:
+    api_headers:
+      X-API-Key: "{{ portainer_api_token | default('') }}"
+  tasks:
+    - name: Without an API token, say what to check by hand
+      ansible.builtin.debug:
+        msg: >-
+          No portainer_api_token in /ansible_config/secrets.yml, so environments were neither added
+          nor checked. In Portainer, add an Agent environment (address <host ip>:{{ portainer_agent_port }})
+          for any of these that has none: {{ groups['portainer_agents'] | join(', ') }}.
+      when: portainer_api_token is not defined
+
+    - name: Add missing environments and check the rollout
+      when: portainer_api_token is defined
+      block:
+        - name: Get the environments Portainer knows
+          ansible.builtin.uri:
+            url: "{{ portainer_url }}/api/endpoints"
+            headers: "{{ api_headers }}"
+            validate_certs: false
+            return_content: true
+          delegate_to: localhost
+          register: envs_before
+          check_mode: false
+          no_log: true
+
+        - name: See which agent hosts answer as a Portainer agent right now
+          ansible.builtin.uri:
+            url: "https://{{ hostvars[item].ansible_host }}:{{ portainer_agent_port }}/ping"
+            validate_certs: false
+            status_code: [200, 204]
+            timeout: 5
+          delegate_to: localhost
+          loop: "{{ groups['portainer_agents'] }}"
+          register: agent_pings
+          failed_when: false
+          check_mode: false
+
+        - name: Work out which environments are missing
+          ansible.builtin.set_fact:
+            known_urls: "{{ envs_before.json | map(attribute='URL') | list }}"
+            reachable_agents: "{{ answered | selectattr('status', 'in', [200, 204]) | map(attribute='item') | list }}"
+          vars:
+            answered: "{{ agent_pings.results | selectattr('status', 'defined') | list }}"
+
+        - name: Add an environment for each reachable agent host that has none (add only)
+          ansible.builtin.uri:
+            url: "{{ portainer_url }}/api/endpoints"
+            method: POST
+            headers: "{{ api_headers }}"
+            body_format: form-multipart
+            body:
+              Name: "{{ hostvars[item].portainer_env_name | default(item) }}"
+              EndpointCreationType: "2"
+              URL: "tcp://{{ hostvars[item].ansible_host }}:{{ portainer_agent_port }}"
+              TLS: "true"
+              TLSSkipVerify: "true"
+              TLSSkipClientVerify: "true"
+              GroupID: "1"
+            validate_certs: false
+            return_content: true
+            status_code: [200, 201]
+          delegate_to: localhost
+          loop: "{{ groups['portainer_agents'] }}"
+          when:
+            - item in reachable_agents
+            - ('tcp://' ~ hostvars[item].ansible_host ~ ':' ~ portainer_agent_port) not in known_urls
+          register: env_create
+          failed_when: false
+          no_log: true
+
+        - name: Stop if adding an environment failed
+          ansible.builtin.assert:
+            that: create_problems | length == 0
+            fail_msg: "{{ create_problems | join(' || ') }}"
+            quiet: true
+          vars:
+            create_problems: "{{ create_lines.splitlines() | map('trim') | select | list }}"
+            create_lines: |
+              {% for r in env_create.results | default([]) if not (r.skipped | default(false)) %}
+              {% if r.status | default(0) not in [200, 201] %}
+              {{ r.item }}: HTTP {{ r.status | default('?') }} {{ (r.json | default({})).message | default(r.msg | default('')) }}
+              {% endif %}
+              {% endfor %}
+          when: not ansible_check_mode
+
+        - name: Get the environments again
+          ansible.builtin.uri:
+            url: "{{ portainer_url }}/api/endpoints"
+            headers: "{{ api_headers }}"
+            validate_certs: false
+            return_content: true
+          delegate_to: localhost
+          register: envs_mid
+          check_mode: false
+          no_log: true
+
+        - name: Ask Portainer to re-check each agent environment now
+          ansible.builtin.uri:
+            url: "{{ portainer_url }}/api/endpoints/{{ item.Id }}/snapshot"
+            method: POST
+            headers: "{{ api_headers }}"
+            validate_certs: false
+            status_code: [200, 204]
+            timeout: 60
+          delegate_to: localhost
+          loop: "{{ envs_mid.json | selectattr('Type', 'equalto', 2) | list }}"
+          loop_control:
+            label: "{{ item.Name }}"
+          failed_when: false
+          no_log: true
+
+        - name: Get the refreshed environments
+          ansible.builtin.uri:
+            url: "{{ portainer_url }}/api/endpoints"
+            headers: "{{ api_headers }}"
+            validate_certs: false
+            return_content: true
+          delegate_to: localhost
+          register: envs_after
+          check_mode: false
+          no_log: true
+
+        - name: Environments, as Portainer sees them now
+          ansible.builtin.debug:
+            msg: "{{ env_lines.splitlines() | map('trim') | select | list }}"
+          vars:
+            agent_ips: "{{ groups['portainer_agents'] | map('extract', hostvars, 'ansible_host') | list }}"
+            # Prefix and suffix added separately: a "\1" backreference here would be read as an escape.
+            managed_urls: "{{ agent_ips | map('regex_replace', '^', 'tcp://') | map('regex_replace', '$', ':' ~ portainer_agent_port) | list }}"
+            env_lines: |
+              {% for e in envs_after.json | sort(attribute='Id') %}
+              {% set agent = (e.Agent | default({}, true)).Version | default('-', true) %}
+              {% set state = 'up' if e.Status == 1 else 'DOWN' %}
+              {% if e.URL in managed_urls %}
+              id={{ e.Id }} | {{ e.Name }} | {{ e.URL }} | {{ state }} | agent {{ agent }} | managed by this playbook
+              {% elif e.Type == 4 %}
+              id={{ e.Id }} | {{ e.Name }} | Edge agent | {{ state }} | OLD: delete it in Portainer once its replacement is up
+              {% else %}
+              id={{ e.Id }} | {{ e.Name }} | {{ e.URL }} | {{ state }} | not managed here
+              {% endif %}
+              {% endfor %}
+
+        - name: Check every agent rolled out in this run is up and on {{ portainer_version }}
+          ansible.builtin.assert:
+            that: rollout_problems | length == 0
+            fail_msg: "{{ rollout_problems | join(' || ') }}"
+            success_msg: Every agent rolled out in this run has an environment that is up and on the right version.
+          vars:
+            by_url: "{{ dict(envs_after.json | map(attribute='URL') | zip(envs_after.json)) }}"
+            rollout_problems: "{{ problem_lines.splitlines() | map('trim') | select | list }}"
+            problem_lines: |
+              {% for h in groups['portainer_agents'] if hostvars[h].portainer_agent_done | default(false) %}
+              {% set e = by_url['tcp://' ~ hostvars[h].ansible_host ~ ':' ~ portainer_agent_port] | default({}) %}
+              {% set seen = (e.Agent | default({}, true)).Version | default('unknown', true) %}
+              {% if not e %}
+              {{ h }}: Portainer has no environment for it
+              {% elif e.Status != 1 %}
+              {{ h }}: environment '{{ e.Name }}' is DOWN in Portainer
+              {% elif seen != portainer_version %}
+              {{ h }}: Portainer sees agent {{ seen }}, expected {{ portainer_version }}
+              {% endif %}
+              {% endfor %}
+          when: not ansible_check_mode

@@ -4,6 +4,8 @@
 #   - Every Sunday 04:30 Pacific (05:30 in summer): patch-guests (OS updates for LXCs, VMs, Pis; no reboots)
 #   - When an Immich change reaches main (e.g. a merged Renovate PR): the immich playbook
 #   - Any time, by hand: Actions tab > ansible > Run workflow > pick a playbook
+# Portainer (playbooks/portainer.yml) is run by hand for now. Once its first rollout has worked, a
+# push trigger on group_vars/portainer_hosts.yml can make a merged version bump deploy itself.
 name: ansible
 
 on:
@@ -22,7 +24,17 @@ on:
       playbook:
         description: Playbook to run
         type: choice
-        options: [ping, patch-guests, patch-hosts, users, harden-ssh, immich, portainer-discover, docker-engine]
+        options:
+          - ping
+          - patch-guests
+          - patch-hosts
+          - users
+          - harden-ssh
+          - immich
+          - portainer-discover
+          - docker-engine
+          - portainer
+          - docker-cleanup
         default: ping
       limit:
         description: "Only these hosts or groups (optional, e.g. pis or plex,gitea)"
@@ -83,7 +95,8 @@ jobs:
             *)        PLAYBOOK="$INPUT_PLAYBOOK" ;;
           esac
           case "$PLAYBOOK" in
-            ping|patch-guests|patch-hosts|users|harden-ssh|immich|portainer-discover|docker-engine) ;;
+            ping|patch-guests|patch-hosts|users|harden-ssh|immich) ;;
+            portainer-discover|docker-engine|portainer|docker-cleanup) ;;
             *) echo "unknown playbook '$PLAYBOOK'"; exit 1 ;;
           esac
           args=(-e "allow_reboot=$ALLOW_REBOOT")

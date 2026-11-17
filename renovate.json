@@ -106,6 +106,18 @@
       "minimumReleaseAgeBehaviour": "timestamp-optional"
     },
     {
+      "description": "Portainer: the server and every agent share one version (ansible/inventory/group_vars/portainer_hosts.yml). Only patch releases of the current LTS line (2.45), always reviewed. To move to a newer LTS, change allowedVersions here and the version there together",
+      "matchPackageNames": [
+        "portainer/portainer-ce"
+      ],
+      "allowedVersions": "/^2\\.45\\./",
+      "automerge": false,
+      "prBodyNotes": [
+        "**One version for the server and all agents.** Read the [Portainer release notes](https://github.com/portainer/portainer/releases) first.",
+        "**Merging does not deploy by itself (yet).** After merging, run the `portainer` playbook from the Actions tab: it backs up the server's data, upgrades the server, then the agents, and checks every environment."
+      ]
+    },
+    {
       "description": "One PR for the whole *arr stack, so it redeploys once",
       "matchFileNames": [
         "stacks/skynet/arr-stack/**"

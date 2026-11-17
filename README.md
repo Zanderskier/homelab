@@ -117,7 +117,8 @@ stacks/<host>/<app>/compose.yaml   one Docker stack each (+ .env.example listing
 stacks/shared/cloudflared/         the Cloudflare tunnel connector
 stacks/little-skynet/immich/       deployed by Ansible, not Portainer
 ansible/                           inventory, playbooks, bootstrap scripts (see ansible/README.md)
-  playbooks/  ping · patch-guests · patch-hosts · users · harden-ssh · immich
+  playbooks/  ping · patch-guests · patch-hosts · users · harden-ssh · immich ·
+              docker-engine · portainer · portainer-discover · docker-cleanup
 .gitea/workflows/
   lint.yml        compose validation, pin check, secret scan, ansible syntax + lint
   renovate.yml    Renovate every 4 hours
@@ -209,7 +210,8 @@ What each label means:
 - [x] Ansible control node; weekly patching after backups; Proxmox/PBS patching
 - [x] Admin + break-glass accounts and SSH hardening on all 16 hosts
 - [x] Immich: reviewed upgrades with pre-update DB dumps, health and version checks
-- [ ] Portainer server/agent updates via Ansible
+- [ ] Portainer: one server + standard agents on one pinned version, managed by Ansible (built; rollout in progress)
+- [ ] Docker CE on every Docker host (three LXCs still on Debian's docker.io 20.10)
 - [ ] Monitoring and alerting (failed jobs, backups, disk health → push notifications)
 - [ ] Gitea, Authentik, Plex, Pi-hole as code in this repo
 - [ ] Managed switch + VLANs (management / servers / trusted / IoT / guest)

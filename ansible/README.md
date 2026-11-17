@@ -27,6 +27,9 @@ ansible/
     immich.yml             deploys Immich at the version in host_vars/immich.yml
     portainer-discover.yml read-only report: Docker + Portainer on every host, environments, stacks
     docker-engine.yml      one-time per host: Debian's docker.io 20.10 -> Docker CE, with a snapshot
+    portainer.yml          Portainer server + standard agents, one pinned version, environments via API
+    docker-cleanup.yml     leftover containers, unused images, orphaned Portainer stack records
+  templates/               compose files the playbooks render onto hosts
   files/                   scripts and keys the playbooks copy to hosts
   bootstrap/
     setup-control-node.sh  one-time: turns a fresh LXC into the Ansible LXC
@@ -262,6 +265,99 @@ check the Proxmox container ID is this host -> pct snapshot -> add Docker's apt 
   now), then run with extra_vars `docker_engine_snapshot=false`.
 - **Afterwards:** remove the host from `old_docker` in `inventory/hosts.yml`. Old `docker-compose`
   (v1) is removed with the old engine; use `docker compose` (with a space) from then on.
+
+## Portainer
+
+One Portainer server (192.168.50.81) is the single pane of glass. Every other host that should
+appear in it runs a **standard agent**, which the server connects to on port 9001. Ansible manages
+all of them from one version, so they can't drift apart.
+
+| | Server (`portainer`) | Agents (`gitea-runner`, `cloudflared`, `arr-stack`, `authentik`, `gitea`) |
+|---|---|---|
+| Config folder | `/opt/portainer` | `/opt/portainer-agent` |
+| Shortcut | `/root/portainer` → config folder | `/root/portainer` → config folder |
+| What runs | `compose.yaml` there (project `portainer`) | `compose.yaml` there (project `portainer-agent`) |
+| Data | existing volume `root_portainer_data`, also linked as `/opt/portainer/data` | none (agents are stateless) |
+| Backups | `/opt/portainer/backups/`, taken before every redeploy, newest 5 kept | — |
+
+The compose files are rendered from `ansible/templates/`. Edit those, or the variables in
+`inventory/group_vars/portainer_hosts.yml`, never the files on the hosts.
+
+**Stacks are not managed here.** They live in the server's data volume, deploy from this repo by
+Git polling, and are untouched by this playbook. The volume is declared `external`, so the playbook
+can never start an empty Portainer: if the volume is missing, it stops.
+
+### What a run does
+
+```
+server:  pull image -> stop -> tar the data volume -> remove old container -> compose up
+         -> wait until its API reports the pinned version
+agents:  one host at a time: pull -> remove the old agent container (docker run, another compose
+         file, or an Edge agent) -> compose up -> wait until /ping reports the pinned version
+API:     add an environment for any agent host that has none (add only) -> ask Portainer to
+         re-check each agent -> fail unless every agent rolled out in this run is up and current
+```
+
+- A host that's already managed and on the right version reports **"Nothing to do"**.
+- **Check mode** shows the plan for every host and the compose file diffs, and touches no container.
+- **limit** works per host. The environment step only runs when `portainer` is in the run.
+- Old config files are renamed to `<name>.retired`, never deleted.
+- The playbook **never edits or deletes an environment**. When a host changes agent type (Edge to
+  standard), it adds the new environment; delete the old one in Portainer once you've checked it.
+- It needs `portainer_api_token` in `/ansible_config/secrets.yml` for the API step. Without it,
+  the containers are still deployed, and it tells you which environments to add by hand.
+
+### Updating Portainer
+
+Renovate opens a PR that changes `portainer_version` (2.45.x patches only; never auto-merged).
+After merging, run the **portainer** playbook from the Actions tab. It upgrades the server first,
+then the agents, as Portainer's upgrade guide says.
+
+To move to a newer LTS line, change `allowedVersions` for Portainer in `renovate.json` and
+`portainer_version` together, after reading the release notes.
+
+### Rolling back the server
+
+A failed run tries to start the existing container again and tells you where the backup is. To go
+back to the data and version from before a run, on 192.168.50.81 as root:
+
+```bash
+cd /opt/portainer
+docker compose down                     # removes the container only; the data volume is external
+ls -lh backups/                         # the file name holds the version and time it was taken
+find data/ -mindepth 1 -delete          # empty the volume (data/ is a link to it)
+tar -xzf backups/portainer-data-<version>-<time>.tar.gz -C data/
+sed -i 's|portainer-ce:.*|portainer-ce:<version>|' compose.yaml
+docker compose up -d
+```
+
+Then set `portainer_version` back to that version in the repo, so the next run doesn't upgrade
+again. If the host itself is broken, restore the LXC from PBS instead.
+
+### Optional shared secret
+
+Agents are set up without a shared secret: an agent obeys the first Portainer server that
+connects to it after each restart. The playbook connects right after starting each agent, which
+keeps that window to seconds. To close it completely, add `portainer_agent_secret: '...'` to
+`/ansible_config/secrets.yml` and run the playbook: the server and every agent then get the same
+`AGENT_SECRET`.
+
+## Housekeeping (`docker-cleanup`)
+
+| Part | Hosts | What it removes |
+|---|---|---|
+| Leftover containers | `cloudflared` | `audio-book-shelf-tunnel` and `n8n-Tunnel`, from the old one-tunnel-per-app setup. Refuses any container that belongs to a compose project |
+| Unused images | every guest with Docker, except Foundry | images no container uses (`docker image prune -a`). Volumes and networks are never pruned |
+| Portainer records | `portainer` | orphaned stack records, and stack folders with no record. Their files go to `/opt/portainer/retired-stacks` (root only) first |
+
+Portainer deletes a stack by tearing it down on whichever environment the request names. An
+orphan with the same name as a live stack (the old `arr-stack` record) would take the live one down
+if deleted through its environment, **which is what the Portainer UI does**. So the playbook
+deletes each orphan through the `gitea-runner` environment, after checking no container there
+belongs to a compose project with that name. Remove orphans with this playbook, not in the UI.
+
+Check mode lists what would be removed. Delete `/opt/portainer/retired-stacks` when you no longer
+need the old files.
 
 ## Adding a machine
 

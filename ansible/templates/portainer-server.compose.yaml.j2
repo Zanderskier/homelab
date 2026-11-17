@@ -1,0 +1,26 @@
+# Managed by Ansible (ansible/playbooks/portainer.yml). Edits here are overwritten on the next run.
+# Version: portainer_version in ansible/inventory/group_vars/portainer_hosts.yml
+name: portainer
+
+services:
+  portainer:
+    image: portainer/portainer-ce:{{ portainer_version }}
+    container_name: portainer
+    restart: always
+    ports:
+      - "8000:8000"   # Edge agent tunnel
+      - "9443:9443"   # web UI and API (HTTPS)
+{% if portainer_agent_secret is defined %}
+    environment:
+      AGENT_SECRET: "{{ portainer_agent_secret }}"
+{% endif %}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+volumes:
+  # The existing data volume, under its real name. "external" means compose will never create it:
+  # if it is missing, the deploy fails instead of starting an empty Portainer.
+  portainer_data:
+    external: true
+    name: {{ portainer_data_volume }}

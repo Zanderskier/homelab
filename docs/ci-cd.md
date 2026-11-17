@@ -25,6 +25,10 @@ main branch ── Portainer GitOps polling (5 min) ──► docker compose up 
 
 **Locked (no PRs at all):** qBittorrent. Its tag is changed by hand.
 
+**Portainer** (server and all agents) is one version in `ansible/inventory/group_vars/portainer_hosts.yml`:
+Renovate proposes 2.45.x patches only, always reviewed. After merging, run the `portainer` playbook
+([ansible/README.md](../ansible/README.md#portainer)).
+
 - Postgres and Redis **major** updates are disabled. They need a dump/restore or `pg_upgrade`,
   not an image bump.
 - Auto-merges wait until a release is 3 days old, so broken releases usually get pulled or fixed
