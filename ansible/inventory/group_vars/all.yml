@@ -13,7 +13,7 @@ breakglass_allowed_from:
 
 # Proxmox Backup Server, for backups that don't go through Proxmox (playbooks/host-backup.yml).
 pbs_server: 192.168.50.76
-pbs_datastore: backups             # PBS UI > Datastore > its name
+pbs_datastore: pbs-external-wd     # PBS UI > Datastore > its name (the 4 TB WD USB drive)
 pbs_namespace: hosts               # keeps these apart from the container backups
 # PBS UI > Dashboard > Show Fingerprint (not secret; lets clients check they reach the real PBS)
 pbs_fingerprint: "72:5b:79:f9:4a:14:b0:67:9f:ce:4f:02:0c:c5:87:0b:b6:11:18:fd:7f:8c:eb:7e:8e:07:8e:04:9f:c4:f9:a9"
