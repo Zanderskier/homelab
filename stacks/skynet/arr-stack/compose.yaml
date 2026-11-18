@@ -52,6 +52,10 @@ services:
       - /mnt/media-storage/arr-stack/flaresolverr/config:/config
     tmpfs:
       - /tmp:size=256M,mode=1777
+    # No crash dumps. Each Chromium crash wrote a 100-800 MB core.<pid> file into /app, inside the
+    # container, and they filled CT 100's disk (8 GB, Nov 2026).
+    ulimits:
+      core: 0
     restart: unless-stopped
 
   radarr:
