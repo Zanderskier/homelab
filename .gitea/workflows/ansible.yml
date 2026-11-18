@@ -33,6 +33,7 @@ on:
           - "docker-cleanup - unused images, orphaned Portainer stacks"
           - "host-backup - nightly PBS backup of host folders (install or update)"
           - "portainer-discover - report only, changes nothing"
+          - "timezone - same timezone on every machine (new machine only)"
           - "users - admin + break-glass accounts (new machine only)"
           - "harden-ssh - keys-only SSH (new machine only)"
         default: "ping - safe test, changes nothing"

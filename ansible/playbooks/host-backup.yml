@@ -37,6 +37,14 @@
       changed_when: false
       check_mode: false
 
+    # The script uses --change-detection-mode (skip unchanged files). Older clients don't have it.
+    - name: Check proxmox-backup-client can skip unchanged files (needs version 3.3 or newer)
+      ansible.builtin.command: proxmox-backup-client help backup
+      register: pbc_help
+      changed_when: false
+      check_mode: false
+      failed_when: "'change-detection-mode' not in (pbc_help.stdout + pbc_help.stderr)"
+
     - name: Install the settings file (root only, holds the token secret)
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../templates/host-backup/host-backup.env.j2"

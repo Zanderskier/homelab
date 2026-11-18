@@ -1,0 +1,33 @@
+---
+# Sets every machine to the same timezone (timezone in group_vars/all.yml), so a schedule means the
+# same thing everywhere: the host-backup timer at 02:45 runs at 02:45 Pacific on every host.
+# The clock itself doesn't change (it runs on UTC underneath), only the local time it shows and
+# when local-time schedules fire. Foundry is left alone while it's being rebuilt.
+# Check mode shows which hosts would change, and from what.
+- name: Same timezone on every machine
+  hosts: all:!foundry-dnd
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Set the timezone to {{ timezone }}
+      community.general.timezone:
+        name: "{{ timezone }}"
+      notify: Restart the schedulers
+
+    - name: Read the local time
+      ansible.builtin.command: date '+%a %F %T %Z'
+      register: local_time
+      changed_when: false
+      check_mode: false
+
+    - name: Local time now
+      ansible.builtin.debug:
+        msg: "{{ local_time.stdout }}"
+
+  handlers:
+    # cron and Proxmox's scheduler (backup jobs) can keep using the old timezone until restarted.
+    # systemd timers pick up the change by themselves. try-restart skips services that aren't running.
+    - name: Restart the schedulers
+      ansible.builtin.command: "systemctl try-restart {{ item }}"  # noqa: command-instead-of-module no-changed-when
+      loop: [cron.service, pvescheduler.service]
+      failed_when: false

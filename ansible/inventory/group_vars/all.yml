@@ -18,3 +18,10 @@ pbs_namespace: hosts               # keeps these apart from the container backup
 # PBS UI > Dashboard > Show Fingerprint (not secret; lets clients check they reach the real PBS)
 pbs_fingerprint: "72:5b:79:f9:4a:14:b0:67:9f:ce:4f:02:0c:c5:87:0b:b6:11:18:fd:7f:8c:eb:7e:8e:07:8e:04:9f:c4:f9:a9"
 pbs_host_backup_token: "host-backup@pbs!skynet" # the token's secret is pbs_host_backup_secret in secrets.yml
+# Nightly host backups only read files that changed. On this day of the week (1 = Monday,
+# 7 = Sunday) every file is read again, to catch a change that kept the same size and mtime.
+host_backup_full_read_day: 7
+
+# Every machine's timezone (playbooks/timezone.yml). Local schedules (the host-backup timer,
+# Proxmox backup jobs, cron) run in this time on every host.
+timezone: America/Los_Angeles

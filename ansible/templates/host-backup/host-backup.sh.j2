@@ -48,6 +48,15 @@ fi
 {% endfor %}
 
 echo "== 3. Sending to Proxmox Backup Server"
+# How the client finds what changed since the last backup:
+#   metadata  skips files whose size, mtime, owner and permissions match the last backup (fast)
+#   data      reads every file again (slow, but catches a change that kept the same size and mtime)
+# Nightly: metadata. Day {{ host_backup_full_read_day }} of the week (1 = Monday, 7 = Sunday): data.
+if [ "$(date +%u)" = "{{ host_backup_full_read_day }}" ]; then
+  mode=data;     echo "mode: data (weekly full read: every file is read again)"
+else
+  mode=metadata; echo "mode: metadata (only files changed since the last backup are read)"
+fi
 if proxmox-backup-client backup \
 {% for p in host_backup_paths %}
     {{ p.name }}.pxar:{{ p.path }} \
@@ -57,6 +66,7 @@ if proxmox-backup-client backup \
     --exclude '{{ e }}' \
 {% endfor %}
 {% endfor %}
+    --change-detection-mode "$mode" \
     --ns {{ pbs_namespace }} --backup-type host --backup-id {{ host_backup_id }}; then
   echo "ok  backup host/{{ host_backup_id }} is in PBS"
 else

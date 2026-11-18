@@ -29,6 +29,7 @@ ansible/
     portainer.yml          Portainer server + standard agents, one pinned version, environments via API
     host-backup.yml        nightly PBS backup of host folders that Proxmox backups skip (bind mounts)
     docker-cleanup.yml     unused images, orphaned Portainer stack records. Safe any time
+    timezone.yml           same timezone (group_vars/all.yml) on every machine except Foundry
   templates/               compose files the playbooks render onto hosts
   files/                   scripts and keys the playbooks copy to hosts
   run-playbook.sh          what every workflow calls: prints what, why, mode and hosts first,
@@ -66,6 +67,7 @@ Usually none: the schedule and the two deploy workflows cover normal operation.
 | `immich`, `portainer` | a deploy failed and you've fixed the cause, or you edited a template | Yes |
 | `host-backup` | you changed what's backed up, or the PBS token | Yes (files + timer only) |
 | `users`, `harden-ssh` | a new machine, or a password change | Yes |
+| `timezone` | a new machine, or a schedule runs at the wrong hour | Yes (timezone only) |
 
 Safety on the Run workflow form:
 - **Dry run is ticked by default.** Untick it only after reading the dry run's plan.
@@ -387,14 +389,29 @@ in no backup until this. Every night at 02:30 (before the 03:00 Proxmox backups)
 - **Retention:** a PBS prune job on the `hosts` namespace (7 daily, 4 weekly, 6 monthly).
 - **Logs:** `journalctl -u host-backup.service` on skynet. Run one now:
   `systemctl start host-backup.service`.
+- **little-skynet** does the same at 02:45 for `/mnt/second-drive` (Immich's photos), as
+  `host/little-skynet`. It leaves out the live database folder (`immich/postgres`). The database is
+  restored from Immich's own nightly dumps in `immich/library/backups`, which are in the backup.
+
+**Fast nightly runs, full read weekly.** Each night the client only reads files whose size, mtime,
+owner or permissions differ from the last backup (`--change-detection-mode=metadata`). Unchanged
+files point at data already in PBS, so a night with few changes takes minutes, not the 40 minutes a
+full read of Immich takes. The one thing that can slip past this is a file whose contents changed
+but whose size and mtime didn't (rare, e.g. a tool that restores the old mtime). So once a week
+(`host_backup_full_read_day` in `group_vars/all.yml`, Sunday) every file is read again
+(`--change-detection-mode=data`). Each run's log says which mode it used.
+
+These backups are stored as two archives per folder, `<name>.mpxar` (file list) and
+`<name>.ppxar` (contents). Snapshots from before the change are a single `<name>.pxar`.
 
 **Restoring.** PBS UI → Datastore → Content → namespace `hosts` → `host/skynet` → a snapshot →
-`nvme1.pxar` → browse or download single files. All of it, on skynet:
+`nvme1.mpxar` → browse or download single files. All of it, on skynet:
 
 ```bash
 set -a; . /etc/host-backup.env; set +a
 proxmox-backup-client snapshot list --ns hosts
-proxmox-backup-client restore --ns hosts host/skynet/<time> nvme1.pxar /mnt/nvme3/restore-nvme1
+proxmox-backup-client restore --ns hosts host/skynet/<time> nvme1.mpxar /mnt/nvme3/restore-nvme1
+# (older snapshots: nvme1.pxar)
 ```
 
 For Gitea, stop its containers, put the files back, then (if the database files are damaged) load
