@@ -41,7 +41,7 @@ services:
       POSTGRES_PASSWORD: ${PAPERLESS_DB_PASSWORD:?set PAPERLESS_DB_PASSWORD in Portainer}
 
   webserver:
-    image: ghcr.io/paperless-ngx/paperless-ngx:3.4.2
+    image: ghcr.io/paperless-ngx/paperless-ngx:3.5.1
     restart: always
     depends_on:
       - db
