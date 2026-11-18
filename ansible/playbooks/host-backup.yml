@@ -71,7 +71,8 @@
         daemon_reload: true
 
     - name: When it runs next
-      ansible.builtin.command: systemctl list-timers host-backup.timer --no-pager
+      # The systemd module can start units but not list timers.
+      ansible.builtin.command: systemctl list-timers host-backup.timer --no-pager  # noqa: command-instead-of-module
       register: next_run
       changed_when: false
       check_mode: false
@@ -87,7 +88,8 @@
         - not ansible_check_mode
       block:
         - name: Back up now (waits until it's finished)
-          ansible.builtin.command: systemctl start host-backup.service
+          # A plain command, not the systemd module: a failed backup must not stop the play before its log is shown.
+          ansible.builtin.command: systemctl start host-backup.service  # noqa: command-instead-of-module
           changed_when: true
           failed_when: false
           register: run_now
