@@ -19,7 +19,9 @@ runs:
         "$HOME/.local/bin/uv" pip install --python "$HOME/.venvs/ansible" -r ansible/requirements.txt
         echo "$HOME/.venvs/ansible/bin" >> "$GITHUB_PATH"
 
+    # --no-cache: the runner home is reused between runs, and two runs sharing Galaxy's response
+    # cache can corrupt it ("Missing expected 'results' in ansible-galaxy cache").
     - name: Install collections
       shell: bash
       working-directory: ansible
-      run: '"$HOME/.venvs/ansible/bin/ansible-galaxy" collection install -r requirements.yml'
+      run: '"$HOME/.venvs/ansible/bin/ansible-galaxy" collection install --no-cache -r requirements.yml'
