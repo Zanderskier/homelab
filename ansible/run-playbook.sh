@@ -71,7 +71,11 @@ changed="$(sed 's/\x1b\[[0-9;]*m//g' "$log" | awk '
 echo "$line"
 if [ "$rc" -ne 0 ]; then
   echo " RESULT: FAILED (exit code $rc). Read the first [ERROR] above; it says what was and wasn't changed."
-  [ -n "$changed" ] && echo " Hosts that had changes before it stopped: $changed"
+  if [ "${CHECK_MODE:-false}" = "true" ]; then
+    [ -n "$changed" ] && echo " (Dry run: nothing was changed. Hosts that would have had changes: $changed)"
+  else
+    [ -n "$changed" ] && echo " Hosts that had changes before it stopped: $changed"
+  fi
 elif [ "${CHECK_MODE:-false}" = "true" ]; then
   if [ -n "$changed" ]; then
     echo " RESULT: dry run OK. A real run would change: $changed"

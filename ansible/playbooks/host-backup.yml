@@ -63,12 +63,19 @@
         mode: "0644"
       loop: [host-backup.service, host-backup.timer]
 
+    # In check mode the unit files above aren't really written, so systemd couldn't find the timer.
     - name: Turn on the nightly timer
       ansible.builtin.systemd_service:
         name: host-backup.timer
         enabled: true
         state: started
         daemon_reload: true
+      when: not ansible_check_mode
+
+    - name: Explain what check mode left out
+      ansible.builtin.debug:
+        msg: A real run turns on host-backup.timer here (nightly at {{ host_backup_time }}).
+      when: ansible_check_mode
 
     - name: When it runs next
       # The systemd module can start units but not list timers.
