@@ -94,6 +94,11 @@
         - host_backup_run_now | default(false) | bool
         - not ansible_check_mode
       block:
+        - name: Note the time, so only this run's log is shown
+          ansible.builtin.command: date +%s
+          register: run_started
+          changed_when: false
+
         - name: Back up now (waits until it's finished)
           # A plain command, not the systemd module: a failed backup must not stop the play before its log is shown.
           ansible.builtin.command: systemctl start host-backup.service  # noqa: command-instead-of-module
@@ -102,7 +107,7 @@
           register: run_now
 
         - name: Read its log
-          ansible.builtin.command: journalctl -u host-backup.service --since "-15min" --no-pager -o cat
+          ansible.builtin.command: journalctl -u host-backup.service --since "@{{ run_started.stdout }}" --no-pager -o cat
           register: run_log
           changed_when: false
 
