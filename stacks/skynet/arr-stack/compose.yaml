@@ -50,8 +50,10 @@ services:
       - "8191:8191"
     volumes:
       - /mnt/media-storage/arr-stack/flaresolverr/config:/config
+    # Chromium keeps its shared memory here (not /dev/shm). One solve uses ~130 MB, and Prowlarr
+    # sends two at once, so 256M was too small ("tab crashed"). RAM is only used while it's filled.
     tmpfs:
-      - /tmp:size=256M,mode=1777
+      - /tmp:size=512M,mode=1777
     # No crash dumps. Each Chromium crash wrote a 100-800 MB core.<pid> file into /app, inside the
     # container, and they filled CT 100's disk (8 GB, Nov 2026).
     ulimits:
