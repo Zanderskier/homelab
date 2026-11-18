@@ -2,6 +2,8 @@
 # Host data backup (playbooks/host-backup.yml): folders that Proxmox's own backups don't cover.
 # Proxmox backs up each container's own disk, but never its bind mounts (mpX: /mnt/... lines), so
 # these folders are sent to PBS separately, every night at host_backup_time.
+# Each entry: name (archive name in PBS), path (must be a mounted drive), and optionally exclude:
+# paths inside it to skip, written from that drive's top and starting with /, e.g. /immich/postgres.
 host_backup_paths:
   - name: nvme1            # archive name in PBS: nvme1.pxar
     path: /mnt/nvme1       # Gitea (CT 107), Authentik (CT 108), gitea-runner (CT 109)

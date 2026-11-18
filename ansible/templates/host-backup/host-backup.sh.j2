@@ -23,7 +23,10 @@ echo "ok  {{ p.path }} ($(findmnt -no SOURCE {{ p.path }}))"
 {% endfor %}
 
 echo "== 2. Database dumps"
-{% for d in host_backup_db_dumps %}
+{% if not (host_backup_db_dumps | default([])) %}
+echo "none listed for this host"
+{% endif %}
+{% for d in host_backup_db_dumps | default([]) %}
 mkdir -p {{ d.dir }}
 if pct status {{ d.ct }} | grep -q running; then
   f="{{ d.dir }}/{{ d.name }}-$(date +%F_%H%M).sql.gz"
@@ -48,6 +51,11 @@ echo "== 3. Sending to Proxmox Backup Server"
 if proxmox-backup-client backup \
 {% for p in host_backup_paths %}
     {{ p.name }}.pxar:{{ p.path }} \
+{% endfor %}
+{% for p in host_backup_paths %}
+{% for e in p.exclude | default([]) %}
+    --exclude '{{ e }}' \
+{% endfor %}
 {% endfor %}
     --ns {{ pbs_namespace }} --backup-type host --backup-id {{ host_backup_id }}; then
   echo "ok  backup host/{{ host_backup_id }} is in PBS"
