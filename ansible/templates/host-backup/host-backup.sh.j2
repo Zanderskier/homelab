@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# Edit ansible/templates/host-backup/host-backup.sh.j2 in the repo, not this file.
+#
+# Nightly backup of host folders that Proxmox's own backups skip (container bind mounts):
+#   1. check each folder is a mounted drive (fstab has nofail, so a dead drive leaves an empty folder)
+#   2. dump each listed database to a file, so there's a consistent copy to restore from
+#   3. send the folders to Proxmox Backup Server ({{ pbs_server }}, datastore {{ pbs_datastore }},
+#      namespace {{ pbs_namespace }}, backup host/{{ host_backup_id }})
+# Logs: journalctl -u host-backup.service     Run now: systemctl start host-backup.service
+set -uo pipefail
+umask 077
+set -a; . /etc/host-backup.env; set +a
+status=0
+
+echo "== 1. Checking the folders are mounted drives"
+{% for p in host_backup_paths %}
+if ! mountpoint -q {{ p.path }}; then
+  echo "ERROR: {{ p.path }} is not a mounted drive (missing or failed?). Nothing was backed up."
+  exit 1
+fi
+echo "ok  {{ p.path }} ($(findmnt -no SOURCE {{ p.path }}))"
+{% endfor %}
+
+echo "== 2. Database dumps"
+{% for d in host_backup_db_dumps %}
+mkdir -p {{ d.dir }}
+if pct status {{ d.ct }} | grep -q running; then
+  f="{{ d.dir }}/{{ d.name }}-$(date +%F_%H%M).sql.gz"
+  # pg_dumpall runs inside the database container; its output is compressed here on the host.
+  if pct exec {{ d.ct }} -- docker exec {{ d.container }} sh -c 'pg_dumpall -U "${POSTGRES_USER:-postgres}"' \
+      | gzip > "$f.part" && [ -s "$f.part" ]; then
+    mv "$f.part" "$f"
+    echo "ok  {{ d.name }}: $(du -h "$f" | cut -f1) -> $f"
+    ls -1t {{ d.dir }}/{{ d.name }}-*.sql.gz | tail -n +{{ d.keep + 1 }} | xargs -r rm -f
+  else
+    rm -f "$f.part"
+    echo "ERROR: dumping {{ d.name }} (CT {{ d.ct }}, container {{ d.container }}) failed. The files are still backed up."
+    status=1
+  fi
+else
+  echo "ERROR: CT {{ d.ct }} isn't running, so {{ d.name }} wasn't dumped. The files are still backed up."
+  status=1
+fi
+{% endfor %}
+
+echo "== 3. Sending to Proxmox Backup Server"
+if proxmox-backup-client backup \
+{% for p in host_backup_paths %}
+    {{ p.name }}.pxar:{{ p.path }} \
+{% endfor %}
+    --ns {{ pbs_namespace }} --backup-type host --backup-id {{ host_backup_id }}; then
+  echo "ok  backup host/{{ host_backup_id }} is in PBS"
+else
+  echo "ERROR: the backup to PBS failed (see the lines above)."
+  status=1
+fi
+
+[ "$status" -eq 0 ] && echo "RESULT: OK" || echo "RESULT: FAILED (see ERROR lines above)"
+exit "$status"

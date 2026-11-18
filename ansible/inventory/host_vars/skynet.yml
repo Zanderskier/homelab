@@ -1,0 +1,19 @@
+---
+# Host data backup (playbooks/host-backup.yml): folders that Proxmox's own backups don't cover.
+# Proxmox backs up each container's own disk, but never its bind mounts (mpX: /mnt/... lines), so
+# these folders are sent to PBS separately, every night at host_backup_time.
+host_backup_paths:
+  - name: nvme1            # archive name in PBS: nvme1.pxar
+    path: /mnt/nvme1       # Gitea (CT 107), Authentik (CT 108), gitea-runner (CT 109)
+
+# Databases to dump to a file first. The live Postgres files can be mid-write while they're copied;
+# the dump is a consistent copy and is what you'd restore from.
+host_backup_db_dumps:
+  - name: gitea
+    ct: 107                        # Proxmox container that runs it
+    container: gitea-db            # Docker container inside it
+    dir: /mnt/nvme1/db-dumps       # on the host, so it's inside the backup
+    keep: 3                        # dumps kept on disk (PBS keeps the history)
+
+host_backup_id: skynet             # shows in PBS as host/skynet
+host_backup_time: "02:30"          # before the 03:00 Proxmox backups

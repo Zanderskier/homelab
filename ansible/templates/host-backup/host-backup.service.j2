@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Back up host folders that Proxmox backups skip, to Proxmox Backup Server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/host-backup
+# Stay out of the way of everything else on the host.
+Nice=10
+IOSchedulingClass=idle

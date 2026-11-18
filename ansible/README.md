@@ -27,6 +27,7 @@ ansible/
     immich.yml             deploys Immich at the version in host_vars/immich.yml
     portainer-discover.yml read-only report: Docker + Portainer on every host, environments, stacks
     portainer.yml          Portainer server + standard agents, one pinned version, environments via API
+    host-backup.yml        nightly PBS backup of host folders that Proxmox backups skip (bind mounts)
     docker-cleanup.yml     unused images, orphaned Portainer stack records. Safe any time
   templates/               compose files the playbooks render onto hosts
   files/                   scripts and keys the playbooks copy to hosts
@@ -63,6 +64,7 @@ Usually none: the schedule and the two deploy workflows cover normal operation.
 | `patch-hosts` | Proxmox or PBS updates are waiting (by hand only) | Yes, never reboots |
 | `docker-cleanup` | disks are filling up, or Portainer shows stacks for hosts that are gone | Yes, removes only unused things |
 | `immich`, `portainer` | a deploy failed and you've fixed the cause, or you edited a template | Yes |
+| `host-backup` | you changed what's backed up, or the PBS token | Yes (files + timer only) |
 | `users`, `harden-ssh` | a new machine, or a password change | Yes |
 
 Safety on the Run workflow form:
@@ -198,6 +200,7 @@ alex_password_hash: '$6$...'          # alex's sudo password
 breakglass_user: 'pick-a-name'        # not "admin"/"breakglass": something not guessable
 breakglass_password_hash: '$6$...'    # a different, long password (generate it in Vaultwarden)
 portainer_api_token: 'ptr_...'        # optional: lets portainer-discover list environments and stacks
+pbs_host_backup_secret: '...'        # host-backup: the PBS API token's secret (host-backup@pbs!skynet)
 ```
 
 Keep the single quotes: the hashes contain `$`. Store both passwords and the break-glass name in
@@ -363,6 +366,39 @@ belongs to a compose project with that name. Remove orphans with this playbook, 
 
 Check mode lists what would be removed. Delete `/opt/portainer/retired-stacks` when you no longer
 need the old files.
+
+## Host folder backups (`host-backup`)
+
+Proxmox backs up each container's own disk, but **never its bind mounts** (`mpX: /mnt/...`). On
+skynet, Gitea, Authentik and gitea-runner keep their data on `/mnt/nvme1`, a bind mount, so it was
+in no backup until this. Every night at 02:30 (before the 03:00 Proxmox backups), skynet runs:
+
+```
+1. check /mnt/nvme1 is a mounted drive    fstab has nofail: a dead drive leaves an empty folder,
+                                          and backing that up would look like success
+2. pg_dumpall Gitea's database            -> /mnt/nvme1/db-dumps/ (newest 3 kept), a consistent copy
+3. proxmox-backup-client backup           -> PBS, namespace "hosts", backup host/skynet (nvme1.pxar)
+```
+
+- **What's backed up:** `inventory/host_vars/skynet.yml`. **PBS details:** `group_vars/all.yml`.
+  **Token secret:** `pbs_host_backup_secret` in `/ansible_config/secrets.yml`.
+- **Least privilege:** the API token `host-backup@pbs!skynet` has `DatastoreBackup` on the `hosts`
+  namespace only: it can add backups there, and can't see, change or delete the container backups.
+- **Retention:** a PBS prune job on the `hosts` namespace (7 daily, 4 weekly, 6 monthly).
+- **Logs:** `journalctl -u host-backup.service` on skynet. Run one now:
+  `systemctl start host-backup.service`.
+
+**Restoring.** PBS UI → Datastore → Content → namespace `hosts` → `host/skynet` → a snapshot →
+`nvme1.pxar` → browse or download single files. All of it, on skynet:
+
+```bash
+set -a; . /etc/host-backup.env; set +a
+proxmox-backup-client snapshot list --ns hosts
+proxmox-backup-client restore --ns hosts host/skynet/<time> nvme1.pxar /mnt/nvme3/restore-nvme1
+```
+
+For Gitea, stop its containers, put the files back, then (if the database files are damaged) load
+the newest dump from `db-dumps/` into a fresh `gitea-db` with `gunzip -c ... | psql -U gitea`.
 
 ## Adding a machine
 

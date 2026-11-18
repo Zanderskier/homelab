@@ -1,0 +1,108 @@
+---
+# Installs a nightly backup, on a Proxmox host, of folders that Proxmox's own backups skip.
+#
+# Proxmox backs up each container's own disk but never its bind mounts (the mpX: /mnt/... lines),
+# so data kept on a host drive and mounted into containers (e.g. Gitea on /mnt/nvme1) is in no
+# backup. This sends those folders to Proxmox Backup Server every night, as a "host" backup:
+#   /usr/local/sbin/host-backup     the script (checks drives, dumps databases, runs the backup)
+#   /etc/host-backup.env            PBS address + token, root only
+#   host-backup.service + .timer    runs it nightly at host_backup_time
+# What to back up: inventory/host_vars/<host>.yml. PBS details: group_vars/all.yml.
+# Token secret: pbs_host_backup_secret in /ansible_config/secrets.yml.
+#
+# extra_vars host_backup_run_now=true also runs one backup at the end and shows its log.
+# Check mode shows each file change and runs nothing.
+- name: Host folder backups to Proxmox Backup Server
+  hosts: proxmox
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Skip hosts with nothing listed to back up
+      ansible.builtin.meta: end_host
+      when: host_backup_paths is not defined
+
+    - name: Check the settings are filled in
+      ansible.builtin.assert:
+        that:
+          - pbs_datastore != 'CHANGE_ME'
+          - pbs_fingerprint is match('^([0-9a-fA-F]{2}:){31}[0-9a-fA-F]{2}$')
+          - pbs_host_backup_secret is defined and pbs_host_backup_secret | length > 0
+        fail_msg: >-
+          Set pbs_datastore and pbs_fingerprint in inventory/group_vars/all.yml, and
+          pbs_host_backup_secret in /ansible_config/secrets.yml on the Ansible LXC (see ansible/README.md).
+        quiet: true
+
+    - name: Check proxmox-backup-client is installed (it comes with Proxmox VE)
+      ansible.builtin.command: proxmox-backup-client version
+      changed_when: false
+      check_mode: false
+
+    - name: Install the settings file (root only, holds the token secret)
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/host-backup/host-backup.env.j2"
+        dest: /etc/host-backup.env
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Install the backup script
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/host-backup/host-backup.sh.j2"
+        dest: /usr/local/sbin/host-backup
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Install the systemd service and timer
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/host-backup/{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: [host-backup.service, host-backup.timer]
+
+    - name: Turn on the nightly timer
+      ansible.builtin.systemd_service:
+        name: host-backup.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: When it runs next
+      ansible.builtin.command: systemctl list-timers host-backup.timer --no-pager
+      register: next_run
+      changed_when: false
+      check_mode: false
+      failed_when: false
+
+    - name: Schedule
+      ansible.builtin.debug:
+        msg: "{{ next_run.stdout_lines }}"
+
+    - name: Run one backup now
+      when:
+        - host_backup_run_now | default(false) | bool
+        - not ansible_check_mode
+      block:
+        - name: Back up now (waits until it's finished)
+          ansible.builtin.command: systemctl start host-backup.service
+          changed_when: true
+          failed_when: false
+          register: run_now
+
+        - name: Read its log
+          ansible.builtin.command: journalctl -u host-backup.service --since "-15min" --no-pager -o cat
+          register: run_log
+          changed_when: false
+
+        - name: Its log
+          ansible.builtin.debug:
+            msg: "{{ run_log.stdout_lines[-40:] }}"
+
+        - name: Fail if the backup failed
+          ansible.builtin.assert:
+            that: run_now.rc == 0
+            fail_msg: The backup failed. The log above says which step and why.
+            quiet: true

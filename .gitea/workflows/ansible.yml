@@ -31,6 +31,7 @@ on:
           - "immich - deploy Immich (runs by itself when an update is merged)"
           - "portainer - Portainer server + agents (runs by itself when an update is merged)"
           - "docker-cleanup - unused images, orphaned Portainer stacks"
+          - "host-backup - nightly PBS backup of host folders (install or update)"
           - "portainer-discover - report only, changes nothing"
           - "users - admin + break-glass accounts (new machine only)"
           - "harden-ssh - keys-only SSH (new machine only)"

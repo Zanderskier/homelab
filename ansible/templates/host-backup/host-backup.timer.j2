@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Nightly host folder backup to Proxmox Backup Server
+
+[Timer]
+OnCalendar=*-*-* {{ host_backup_time }}:00
+# If the host was off at that time, run once when it's back.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
