@@ -29,6 +29,7 @@ ansible/
     portainer.yml          Portainer server + standard agents, one pinned version, environments via API
     host-backup.yml        nightly PBS backup of host folders that Proxmox backups skip (bind mounts)
     docker-cleanup.yml     unused images, orphaned Portainer stack records. Safe any time
+    docker.yml             Docker CE from Docker's own repository on the docker_hosts group
     timezone.yml           same timezone (group_vars/all.yml) on every machine
   templates/               compose files the playbooks render onto hosts
   files/                   scripts and keys the playbooks copy to hosts
@@ -68,6 +69,7 @@ Usually none: the schedule and the two deploy workflows cover normal operation.
 | `host-backup` | you changed what's backed up, or the PBS token | Yes (files + timer only) |
 | `users`, `harden-ssh` | a new machine, or a password change | Yes |
 | `timezone` | a new machine, or a schedule runs at the wrong hour | Yes (timezone only) |
+| `docker` | a new Docker machine (add it to `docker_hosts` in the inventory first) | Yes (installs Docker only) |
 
 Safety on the Run workflow form:
 - **Dry run is ticked by default.** Untick it only after reading the dry run's plan.
