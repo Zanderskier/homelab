@@ -1,5 +1,6 @@
 # Kiwix: offline Wikipedia and other ZIM archives, served as a website.
 # Runs in the survival LXC (CT 101). ZIM files: /mnt/nvme0/survival/kiwix/current on skynet.
+# The files in current/ are added by ansible/playbooks/kiwix-update.yaml; this container only reads them (:ro).
 
 services:
   kiwix:
