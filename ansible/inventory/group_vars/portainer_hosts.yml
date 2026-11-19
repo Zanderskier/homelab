@@ -5,7 +5,7 @@
 # to change this (2.45.x patches only, see renovate.json); it is never auto-merged. To move to a
 # newer LTS line, change renovate.json's allowedVersions and this value together.
 # renovate: datasource=docker depName=portainer/portainer-ce
-portainer_version: "2.45.3"
+portainer_version: "2.45.4"
 
 # Where the server answers. The playbook's API calls and its version checks use this.
 portainer_url: https://192.168.50.81:9443
