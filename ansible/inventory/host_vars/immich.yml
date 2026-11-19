@@ -5,7 +5,7 @@
 # (ansible/playbooks/immich.yml). Always read the release notes first: Immich sometimes needs a new
 # docker-compose.yml too (stacks/little-skynet/immich/compose.yaml).
 # renovate: datasource=docker depName=ghcr.io/immich-app/immich-server
-immich_version: "v3.4.1"
+immich_version: "v3.4.2"
 
 # Where Immich lives on the VM (virtiofs share from little-skynet: /mnt/second-drive).
 immich_dir: /mnt/immich/immich
