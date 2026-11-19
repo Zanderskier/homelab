@@ -1,59 +1,28 @@
 ---
-# Installs a nightly backup, on a Proxmox host, of folders that Proxmox's own backups skip.
+# Keeps the Kiwix ZIM files on the survival LXC at their newest versions, by installing:
+#   /usr/local/sbin/kiwix-update       the script: find newest, download (resumes), checksum,
+#                                      size check, old version to archive/, restart Kiwix
+#   kiwix-update.service + .timer      runs it monthly at kiwix_update_time
+# Which ZIMs and where: inventory/host_vars/survival.yml. Nothing is ever deleted.
 #
-# Proxmox backs up each container's own disk but never its bind mounts (the mpX: /mnt/... lines),
-# so data kept on a host drive and mounted into containers (e.g. Gitea on /mnt/nvme1) is in no
-# backup. This sends those folders to Proxmox Backup Server every night, as a "host" backup:
-#   /usr/local/sbin/kiwix-update     the script (checks drives, dumps databases, runs the backup)
-#   /etc/kiwix-update.env            PBS address + token, root only
-#   kiwix-update.service + .timer    runs it nightly at kiwix_update_time
-# What to back up: inventory/host_vars/<host>.yml. PBS details: group_vars/all.yml.
-# Token secret: pbs_kiwix_update_secret in /ansible_config/secrets.yml.
-#
-# extra_vars kiwix_update_run_now=true also runs one backup at the end and shows its log.
+# The download itself runs on the LXC, not in this job: Wikipedia is 119 GB and can take hours.
+# extra_vars kiwix_update_run_now=true starts one run in the background and says how to follow it.
 # Check mode shows each file change and runs nothing.
-- name: Host folder backups to Proxmox Backup Server
+- name: Kiwix ZIM updates
   hosts: survival
   become: true
   gather_facts: false
   tasks:
-    - name: Skip hosts with nothing listed to back up
-      when: kiwix_update_paths is not defined
+    - name: Tools the script uses
+      ansible.builtin.apt:
+        name:
+          - curl
+          - wget
+        state: present
+        update_cache: true
+        cache_valid_time: 3600   # don't refresh the package lists again if they're less than an hour old
 
-    - name: Check the settings are filled in
-      ansible.builtin.assert:
-        that:
-          - pbs_datastore != 'CHANGE_ME'
-          - pbs_fingerprint is match('^([0-9a-fA-F]{2}:){31}[0-9a-fA-F]{2}$')
-          - pbs_kiwix_update_secret is defined and pbs_kiwix_update_secret | length > 0
-        fail_msg: >-
-          Set pbs_datastore and pbs_fingerprint in inventory/group_vars/all.yml, and
-          pbs_kiwix_update_secret in /ansible_config/secrets.yml on the Ansible LXC (see ansible/README.md).
-        quiet: true
-
-    - name: Check proxmox-backup-client is installed (it comes with Proxmox VE)
-      ansible.builtin.command: proxmox-backup-client version
-      changed_when: false
-      check_mode: false
-
-    # The script uses --change-detection-mode (skip unchanged files). Older clients don't have it.
-    - name: Check proxmox-backup-client can skip unchanged files (needs version 3.3 or newer)
-      ansible.builtin.command: proxmox-backup-client help backup
-      register: pbc_help
-      changed_when: false
-      check_mode: false
-      failed_when: "'change-detection-mode' not in (pbc_help.stdout + pbc_help.stderr)"
-
-    - name: Install the settings file (root only, holds the token secret)
-      ansible.builtin.template:
-        src: "{{ playbook_dir }}/../templates/kiwix-update/kiwix-update.env.j2"
-        dest: /etc/kiwix-update.env
-        owner: root
-        group: root
-        mode: "0600"
-      no_log: true
-
-    - name: Install the backup script
+    - name: Install the update script
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../templates/kiwix-update/kiwix-update.sh.j2"
         dest: /usr/local/sbin/kiwix-update
@@ -71,7 +40,7 @@
       loop: [kiwix-update.service, kiwix-update.timer]
 
     # In check mode the unit files above aren't really written, so systemd couldn't find the timer.
-    - name: Turn on the nightly timer
+    - name: Turn on the monthly timer
       ansible.builtin.systemd_service:
         name: kiwix-update.timer
         enabled: true
@@ -81,7 +50,7 @@
 
     - name: Explain what check mode left out
       ansible.builtin.debug:
-        msg: A real run turns on kiwix-update.timer here (nightly at {{ kiwix_update_time }}).
+        msg: A real run turns on kiwix-update.timer here (at {{ kiwix_update_time }}).
       when: ansible_check_mode
 
     - name: When it runs next
@@ -96,44 +65,21 @@
       ansible.builtin.debug:
         msg: "{{ next_run.stdout_lines }}"
 
-    - name: Run one backup now
+    - name: Run one update now
       when:
         - kiwix_update_run_now | default(false) | bool
         - not ansible_check_mode
       block:
-        - name: Note the time, so only this run's log is shown
-          ansible.builtin.command: date +%s
-          register: run_started
-          changed_when: false
-
-        - name: Back up now (waits until it's finished)
-          # A plain command, not the systemd module: a failed backup must not stop the play before its log is shown.
-          ansible.builtin.command: systemctl start kiwix-update.service  # noqa: command-instead-of-module
+        # --no-block: start it and return at once. Without it, this job would wait for the whole
+        # download (hours) and be killed by the Actions time limit.
+        - name: Start an update in the background
+          ansible.builtin.command: systemctl start --no-block kiwix-update.service  # noqa: command-instead-of-module
           changed_when: true
-          failed_when: false
-          register: run_now
 
-        - name: Read its log
-          ansible.builtin.command: journalctl -u kiwix-update.service --since "@{{ run_started.stdout }}" --no-pager -o cat
-          register: run_log
-          changed_when: false
-
-        - name: Its log
+        - name: How to follow it
           ansible.builtin.debug:
-            msg: "{{ run_log.stdout_lines[-40:] }}"
-
-        - name: Fail if the backup failed
-          ansible.builtin.assert:
-            that: run_now.rc == 0
-            fail_msg: The backup failed. The log above says which step and why.
-            quiet: true
-
-    - name: Apt packages installed curl & wget
-          ansible.builtin.apt:
-            name:
-              - curl
-              - get
-            state: present
-            update_cache: true
-          
-
+            msg:
+              - The update is running on {{ inventory_hostname }}. It can take hours for Wikipedia.
+              - "Follow it live:     ssh alex@{{ ansible_host }}, then: sudo journalctl -fu kiwix-update"
+              - "Is it still going:  systemctl status kiwix-update"
+              - "It ends with RESULT: OK, or RESULT: FAILED or HELD and the reason above it."

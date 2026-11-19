@@ -33,6 +33,7 @@ on:
           - "docker-cleanup - unused images, orphaned Portainer stacks"
           - "docker - Docker CE on docker_hosts (new machine only)"
           - "host-backup - nightly PBS backup of host folders (install or update)"
+          - "kiwix-update - monthly offline Wikipedia/ZIM update on survival (install or update)"
           - "portainer-discover - report only, changes nothing"
           - "timezone - same timezone on every machine (new machine only)"
           - "users - admin + break-glass accounts (new machine only)"

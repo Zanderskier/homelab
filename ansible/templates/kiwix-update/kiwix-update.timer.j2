@@ -1,9 +1,10 @@
 # {{ ansible_managed }}
 [Unit]
-Description=First of the Month Wikipidia Update
+Description=Monthly Kiwix ZIM update (newest versions from {{ kiwix_base_url }})
 
 [Timer]
-OnCalendar="*-*-01 04:00"
+# kiwix_update_time in host_vars/survival.yml is a complete systemd calendar expression.
+OnCalendar={{ kiwix_update_time }}
 # If the host was off at that time, run once when it's back.
 Persistent=true
 

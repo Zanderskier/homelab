@@ -1,12 +1,17 @@
 # {{ ansible_managed }}
 [Unit]
-Description=Back up host folders that Proxmox backups skip, to Proxmox Backup Server
+Description=Update the Kiwix ZIM files in {{ kiwix_dir }}/current to their newest versions
 Wants=network-online.target
-After=network-online.target
+# docker.service: the script restarts the kiwix container when a file changed.
+After=network-online.target docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/host-backup
-# Stay out of the way of everything else on the host.
+ExecStart=/usr/local/sbin/kiwix-update
+# A oneshot service has no start time limit by default. Written out here on purpose: Wikipedia is
+# 119 GB and can take hours. A stalled download doesn't hang forever: wget gives up on its own
+# after 15 minutes without data, and the next run resumes it.
+TimeoutStartSec=infinity
+# Stay out of the way of everything else on the host (Kiwix readers come first).
 Nice=10
 IOSchedulingClass=idle

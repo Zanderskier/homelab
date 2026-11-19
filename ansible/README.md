@@ -31,6 +31,7 @@ ansible/
     docker-cleanup.yml     unused images, orphaned Portainer stack records. Safe any time
     docker.yml             Docker CE from Docker's own repository on the docker_hosts group
     timezone.yml           same timezone (group_vars/all.yml) on every machine
+    kiwix-update.yml       monthly update of the offline Wikipedia/ZIM files on survival (never deletes)
   templates/               compose files the playbooks render onto hosts
   files/                   scripts and keys the playbooks copy to hosts
   run-playbook.sh          what every workflow calls: prints what, why, mode and hosts first,
@@ -69,6 +70,7 @@ Usually none: the schedule and the two deploy workflows cover normal operation.
 | `host-backup` | you changed what's backed up, or the PBS token | Yes (files + timer only) |
 | `users`, `harden-ssh` | a new machine, or a password change | Yes |
 | `timezone` | a new machine, or a schedule runs at the wrong hour | Yes (timezone only) |
+| `kiwix-update` | you changed the ZIM list in `host_vars/survival.yml`, or want an update now (`kiwix_update_run_now=true`) | Yes (script + timer; the download runs on survival) |
 | `docker` | a new Docker machine (add it to `docker_hosts` in the inventory first) | Yes (installs Docker only) |
 
 Safety on the Run workflow form:

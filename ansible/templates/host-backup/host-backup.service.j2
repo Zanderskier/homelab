@@ -1,13 +1,12 @@
 # {{ ansible_managed }}
 [Unit]
-Description=Updates all the .zim files on kiwix located in /mnt/nvme0
+Description=Back up host folders that Proxmox backups skip, to Proxmox Backup Server
 Wants=network-online.target
-After=docker.service.target
+After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/srv/survival/kiwix
+ExecStart=/usr/local/sbin/host-backup
 # Stay out of the way of everything else on the host.
 Nice=10
 IOSchedulingClass=idle
-# downloads that run longer than 4 hours should be killed with systemd
