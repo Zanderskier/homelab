@@ -9,7 +9,7 @@ host_backup_paths:
     path: /mnt/nvme1       # Gitea (CT 107), Authentik (CT 108), gitea-runner (CT 109)
   
   - name: nvme0            # archive name in PBS: nvme0.pxar
-    path: /mnt/nvme0       # Foundry VTT data (CT 101)
+    path: /mnt/nvme0       # Backup of kiwix wikipedia copy / survival local copy
 
 # Databases to dump to a file first. The live Postgres files can be mid-write while they're copied;
 # the dump is a consistent copy and is what you'd restore from.
