@@ -8,10 +8,9 @@ kiwix_update_time: "*-*-01 04:00"   # systemd calendar: the 1st of every month, 
 kiwix_zims:
   - {name: wikipedia_en_all_maxi, folder: wikipedia}
   - {name: mdwiki_en_all_maxi, folder: other}
-  - {name: zimgit-food-preparation_en, folder: food_prep}
-  - {name: zimgit-knots_en, folder: knots}
-  - {name: zimgit-medicine_en, folder: medicine}
-  - {name: zimgit-post-disaster_en, folder: post_disaster}
-  - {name: zimgit-water_en, folder: water}
+  - {name: zimgit-food-preparation_en, folder: other}
+  - {name: zimgit-knots_en, folder: other}
+  - {name: zimgit-medicine_en, folder: other}
+  - {name: zimgit-post-disaster_en, folder: other}
+  - {name: zimgit-water_en, folder: other}
   - {name: ifixit_en_all, folder: ifixit}
-  
