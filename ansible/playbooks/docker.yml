@@ -1,0 +1,43 @@
+---
+# Installs Docker CE from Docker's own apt repository on the hosts in the docker_hosts group
+# (inventory/hosts.yml): repository + signing key, the Docker packages, the service on at boot.
+# Safe to run again: when Docker is already set up this way, it changes nothing.
+- name: Docker CE from Docker's own repository
+  hosts: docker_hosts
+  become: true
+  gather_facts: true            # we need each host's OS name and codename (Debian/trixie, Ubuntu/noble)
+  tasks:
+    - name: Docker's apt repository
+      ansible.builtin.deb822_repository:
+        name: docker
+        types: [deb]
+        uris: "https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}"
+        suites: "{{ ansible_facts['distribution_release'] }}"
+        components: [stable]
+        signed_by: "https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg"
+      register: docker_repo
+
+    # In a dry run a new repository isn't really added, so apt can't see Docker's packages yet.
+    - name: Explain what the dry run left out
+      ansible.builtin.debug:
+        msg: A real run adds Docker's repository first, then installs the packages and starts Docker.
+      when: ansible_check_mode and docker_repo is changed
+
+    - name: Docker packages
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+      when: not (ansible_check_mode and docker_repo is changed)
+
+    - name: Docker running, and started at boot
+      ansible.builtin.systemd_service:
+        name: docker
+        enabled: true
+        state: started
+      when: not (ansible_check_mode and docker_repo is changed)

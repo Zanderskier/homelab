@@ -25,6 +25,7 @@ case "$PLAYBOOK" in
   immich)             WHAT="Deploys Immich at the version in host_vars/immich.yml (DB dump first). Runs by itself when an Immich update is merged." ;;
   portainer)          WHAT="Portainer server + agents at the version in group_vars/portainer_hosts.yml (data backup first). Runs by itself when a Portainer update is merged." ;;
   docker-cleanup)     WHAT="Removes unused Docker images and orphaned Portainer stack records." ;;
+  docker)             WHAT="Installs Docker CE from Docker's own repository on the docker_hosts group. Safe to run again." ;;
   host-backup)        WHAT="Installs/updates the nightly backup of host folders (e.g. /mnt/nvme1) to PBS. extra_vars host_backup_run_now=true also runs one now." ;;
   timezone)           WHAT="Sets every machine to the timezone in group_vars/all.yml. Only needed for a new machine or a timezone change." ;;
   portainer-discover) WHAT="Report only. Shows Docker + Portainer on every host. Changes nothing." ;;
