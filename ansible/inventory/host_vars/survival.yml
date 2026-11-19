@@ -1,0 +1,17 @@
+# Kiwix ZIM files kept up to date by playbooks/kiwix-update.yml (a monthly timer on this host).
+# Each entry: name = the file name without _YYYY-MM.zim, folder = its folder under kiwix_base_url.
+# The newest version of each is downloaded; the one it replaces moves to archive/. Nothing is deleted.
+kiwix_dir: /srv/survival/kiwix
+kiwix_base_url: https://download.kiwix.org/zim
+kiwix_min_size_percent: 95          # a new version under 95% of the current size is held for you to check
+kiwix_update_time: "*-*-01 04:00"   # systemd calendar: the 1st of every month, 04:00
+kiwix_zims:
+  - {name: wikipedia_en_all_maxi, folder: wikipedia}
+  - {name: mdwiki_en_all_maxi, folder: other}
+  - {name: zimgit-food-preparation_en, folder: food_prep}
+  - {name: zimgit-knots_en, folder: knots}
+  - {name: zimgit-medicine_en, folder: medicine}
+  - {name: zimgit-post-disaster_en, folder: post_disaster}
+  - {name: zimgit-water_en, folder: water}
+  - {name: ifixit_en_all, folder: ifixit}
+  
