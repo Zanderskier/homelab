@@ -1,0 +1,13 @@
+# Kiwix: offline Wikipedia and other ZIM archives, served as a website.
+# Runs in the survival LXC (CT 101). ZIM files: /mnt/nvme0/survival/kiwix/current on skynet.
+
+services:
+  kiwix:
+    image: ghcr.io/kiwix/kiwix-serve:3.8.2
+    container_name: kiwix
+    restart: always
+    command: "*.zim"          # serve every ZIM file in /data
+    ports:
+      - "8080:8080"
+    volumes:
+      - /srv/survival/kiwix/current:/data:ro
