@@ -165,7 +165,7 @@ LAN `192.168.50.0/24`. Every address is a DHCP reservation.
 | Immich (VM) | Immich | 192.168.50.106 |
 | Gitea | gittea-repo | 192.168.50.124 |
 | Ansible control node | Ansible | 192.168.50.129 |
-| Kiwix | skynet | 192.168.50.131 |
+| Survival LXC (offline Wikipedia, maps) | survival | 192.168.50.131 |
 | JetKVM #1 | Jet-KVM | 192.168.50.150 |
 | Authentik | Authentik | 192.168.50.151 |
 | Living room printer | Living-Room-Printer | 192.168.50.166 |
@@ -191,7 +191,7 @@ What each label means:
 | Audiobookshelf | Arr-Stack | http://192.168.50.199:13378 | Public |
 | Overseerr | Arr-Stack | http://192.168.50.199:5055 | Public |
 | Gitea | gittea-repo | http://192.168.50.124:3000 | Public |
-| Kiwix | survival-wiki | http://192.168.50.124:<unkown at time> |
+| Kiwix (offline Wikipedia) | survival | http://192.168.50.131:8080 (being built) | LAN/VPN (planned: Public) |
 | Authentik (SSO) | Authentik | http://192.168.50.151:9000 | Public |
 | Portainer | Portainer-Lsky | https://192.168.50.81:9443 | Admin |
 | Uptime Kuma | Portainer-Lsky | http://192.168.50.81:3001 | Admin |

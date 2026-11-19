@@ -29,7 +29,7 @@ ansible/
     portainer.yml          Portainer server + standard agents, one pinned version, environments via API
     host-backup.yml        nightly PBS backup of host folders that Proxmox backups skip (bind mounts)
     docker-cleanup.yml     unused images, orphaned Portainer stack records. Safe any time
-    timezone.yml           same timezone (group_vars/all.yml) on every machine except Foundry
+    timezone.yml           same timezone (group_vars/all.yml) on every machine
   templates/               compose files the playbooks render onto hosts
   files/                   scripts and keys the playbooks copy to hosts
   run-playbook.sh          what every workflow calls: prints what, why, mode and hosts first,
@@ -357,7 +357,7 @@ keeps that window to seconds. To close it completely, add `portainer_agent_secre
 
 | Part | Hosts | What it removes |
 |---|---|---|
-| Unused images | every guest with Docker, except Foundry | images no container uses (`docker image prune -a`). Volumes and networks are never pruned |
+| Unused images | every guest with Docker | images no container uses (`docker image prune -a`). Volumes and networks are never pruned |
 | Portainer records | `portainer` | orphaned stack records, and stack folders with no record. Their files go to `/opt/portainer/retired-stacks` (root only) first |
 
 Portainer deletes a stack by tearing it down on whichever environment the request names. An
