@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=First of the Month Wikipidia Update
+
+[Timer]
+OnCalendar="*-*-01 04:00"
+# If the host was off at that time, run once when it's back.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
