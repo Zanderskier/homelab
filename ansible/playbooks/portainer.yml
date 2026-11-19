@@ -33,7 +33,7 @@
     - name: Stop if it isn't
       ansible.builtin.assert:
         that: compose_plugin.rc == 0
-        fail_msg: This host has no `docker compose`. Run the docker playbook (docker.yml) on it first: add the host to docker_hosts in the inventory.
+        fail_msg: This host has no `docker compose`. Run the docker playbook (docker.yml) on it first, after adding the host to docker_hosts in the inventory.
         quiet: true
 
     - name: Find the existing data volume
@@ -251,7 +251,7 @@
     - name: Stop if it isn't
       ansible.builtin.assert:
         that: compose_plugin.rc == 0
-        fail_msg: This host has no `docker compose`. Run the docker playbook (docker.yml) on it first: add the host to docker_hosts in the inventory.
+        fail_msg: This host has no `docker compose`. Run the docker playbook (docker.yml) on it first, after adding the host to docker_hosts in the inventory.
         quiet: true
 
     - name: Read the current agent container
