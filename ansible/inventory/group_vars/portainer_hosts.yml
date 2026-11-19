@@ -26,4 +26,4 @@ portainer_backups_to_keep: 5
 portainer_agent_port: 9001
 
 # Optional. Define portainer_agent_secret in /ansible_config/secrets.yml to make the server and all
-# agents share a secret (AGENT_SECRET), so an agent only obeys a server that knows it. Not set today.
+# agents share a secret (AGENT_SECRET), so an agent only obeys a server that knows it.

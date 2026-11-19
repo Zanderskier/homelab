@@ -98,6 +98,8 @@
         owner: root
         group: root
         mode: "0600"
+      # No diff: the file can hold portainer_agent_secret, and diffs end up in the Actions log.
+      diff: false
       register: compose_file
 
     - name: List the reasons to (re)deploy
@@ -294,6 +296,8 @@
         owner: root
         group: root
         mode: "0600"
+      # No diff: the file can hold portainer_agent_secret, and diffs end up in the Actions log.
+      diff: false
       register: compose_file
 
     - name: List the reasons to (re)deploy
@@ -314,8 +318,12 @@
           - "Target: {{ target_image }} on port {{ portainer_agent_port }}"
           - "{{ ('Will (re)deploy because: ' ~ (agent_reasons | join('; '))) if agent_reasons else 'Nothing to do.' }}"
 
+    # In a dry run the folder and compose file above aren't really created, so on a new host there's
+    # nothing to run docker compose in. The plan above says what a real run would do.
     - name: Deploy the agent
-      when: agent_reasons | length > 0
+      when:
+        - agent_reasons | length > 0
+        - not ansible_check_mode
       block:
         - name: Pull the new image while the old agent keeps running
           ansible.builtin.command: docker compose pull
