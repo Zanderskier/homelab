@@ -24,9 +24,9 @@ case "$PLAYBOOK" in
   harden-ssh)         WHAT="Keys-only SSH, no root login. Only needed for a new machine." ;;
   immich)             WHAT="Deploys Immich at the version in host_vars/immich.yml (DB dump first). Runs by itself when an Immich update is merged." ;;
   portainer)          WHAT="Portainer server + agents at the version in group_vars/portainer_hosts.yml (data backup first). Runs by itself when a Portainer update is merged." ;;
-  docker-cleanup)     WHAT="Removes unused Docker images (not on Foundry) and orphaned Portainer stack records." ;;
+  docker-cleanup)     WHAT="Removes unused Docker images and orphaned Portainer stack records." ;;
   host-backup)        WHAT="Installs/updates the nightly backup of host folders (e.g. /mnt/nvme1) to PBS. extra_vars host_backup_run_now=true also runs one now." ;;
-  timezone)           WHAT="Sets every machine (not Foundry) to the timezone in group_vars/all.yml. Only needed for a new machine or a timezone change." ;;
+  timezone)           WHAT="Sets every machine to the timezone in group_vars/all.yml. Only needed for a new machine or a timezone change." ;;
   portainer-discover) WHAT="Report only. Shows Docker + Portainer on every host. Changes nothing." ;;
   *) echo "Unknown playbook '$PLAYBOOK'."; exit 1 ;;
 esac

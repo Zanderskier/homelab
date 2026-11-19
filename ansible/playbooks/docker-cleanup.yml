@@ -2,7 +2,7 @@
 # Housekeeping. Safe to run any time: when there's nothing to clean, it changes nothing.
 # Two independent parts; use limit to run only some hosts.
 #
-#   1. Every Docker guest except Foundry: remove images that no container uses any more
+#   1. Every Docker guest: remove images that no container uses any more
 #      (old versions left behind by updates). Volumes and networks are never pruned.
 #   2. Portainer: remove orphaned stack records (stacks whose environment no longer exists) and
 #      stack folders that have no record. Their files are moved to /opt/portainer/retired-stacks
@@ -19,7 +19,7 @@
 # (A third part, removing the leftover one-tunnel-per-app containers on cloudflared, ran once on
 # 2026-11-17 and was then taken out. It's in the Git history if it's ever needed again.)
 - name: Remove unused Docker images
-  hosts: guests:!foundry-dnd
+  hosts: guests
   become: true
   gather_facts: false
   tasks:

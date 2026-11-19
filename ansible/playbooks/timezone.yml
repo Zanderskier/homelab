@@ -2,10 +2,10 @@
 # Sets every machine to the same timezone (timezone in group_vars/all.yml), so a schedule means the
 # same thing everywhere: the host-backup timer at 02:45 runs at 02:45 Pacific on every host.
 # The clock itself doesn't change (it runs on UTC underneath), only the local time it shows and
-# when local-time schedules fire. Foundry is left alone while it's being rebuilt.
+# when local-time schedules fire.
 # Check mode shows which hosts would change, and from what.
 - name: Same timezone on every machine
-  hosts: all:!foundry-dnd
+  hosts: all
   become: true
   gather_facts: false
   tasks:
