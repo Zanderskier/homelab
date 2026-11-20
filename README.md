@@ -165,7 +165,7 @@ LAN `192.168.50.0/24`. Every address is a DHCP reservation.
 | Immich (VM) | Immich | 192.168.50.106 |
 | Gitea | gittea-repo | 192.168.50.124 |
 | Ansible control node | Ansible | 192.168.50.129 |
-| Survival LXC (offline Wikipedia, maps) | survival | 192.168.50.131 |
+| Survival LXC (offline Wikipedia) | survival | 192.168.50.131 |
 | JetKVM #1 | Jet-KVM | 192.168.50.150 |
 | Authentik | Authentik | 192.168.50.151 |
 | Living room printer | Living-Room-Printer | 192.168.50.166 |
