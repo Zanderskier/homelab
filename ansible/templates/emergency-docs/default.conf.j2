@@ -2,11 +2,9 @@
 # Edit ansible/templates/emergency-docs/default.conf.j2 in the repo, not this file.
 #
 # Serves the emergency docs site (files copied in by the emergency-docs repo's workflow).
-#   :8080  behind the Cloudflare tunnel. Every request is checked with Authentik (forward auth,
-#          https://docs.goauthentik.io/add-secure-apps/providers/proxy/server_nginx/).
-{% if emergency_docs_lan_htpasswd is defined %}
-#   :8081  LAN fallback (internet or Authentik down): HTTP basic auth.
-{% endif %}
+#   :8080  behind the digital-estate Cloudflare tunnel. Every request is checked with Authentik
+#          (forward auth, https://docs.goauthentik.io/add-secure-apps/providers/proxy/server_nginx/).
+#          If Authentik can't answer, nginx refuses (500): the guide never opens without a login.
 
 # cloudflared talks plain HTTP to this server, but the browser used HTTPS. Authentik needs the
 # address the browser saw, so use the X-Forwarded-Proto header cloudflared sends.
@@ -51,22 +49,3 @@ server {
         return 302 /outpost.goauthentik.io/start?rd=$docs_proto://$http_host$request_uri;
     }
 }
-{% if emergency_docs_lan_htpasswd is defined %}
-
-server {
-    listen 8081;
-    server_name _;
-    root /usr/share/nginx/html;
-    server_tokens off;
-
-    auth_basic           "Family emergency guide";
-    auth_basic_user_file /etc/nginx/conf.d/htpasswd;
-
-    location / {
-        add_header X-Robots-Tag "noindex, nofollow" always;
-        add_header Referrer-Policy no-referrer always;
-        add_header X-Content-Type-Options nosniff always;
-        try_files  $uri $uri/ =404;
-    }
-}
-{% endif %}
