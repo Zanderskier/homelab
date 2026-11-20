@@ -55,6 +55,20 @@
         fail_msg: rsync is installed but has no rrsync (needs Debian 12 or newer). Upgrade the LXC first.
         quiet: true
 
+    # A dry run of the very first setup can't preview the steps that write into the deploy user's
+    # home or the new folders: neither exists yet, because a dry run creates nothing. Those steps
+    # are skipped then, with a note. Real runs, and dry runs once it's set up, run everything.
+    - name: Does the deploy user exist yet?
+      ansible.builtin.command: getent passwd {{ deploy_user }}
+      register: deploy_user_lookup
+      changed_when: false
+      check_mode: false
+      failed_when: false
+
+    - name: Remember whether this is a dry run of the very first setup
+      ansible.builtin.set_fact:
+        first_setup_dry_run: "{{ ansible_check_mode and deploy_user_lookup.rc != 0 }}"
+
     - name: Create the deploy user (no password; only its key can log in)
       ansible.builtin.user:
         name: "{{ deploy_user }}"
@@ -85,6 +99,7 @@
         key: "{{ lookup('ansible.builtin.file', playbook_dir + '/../files/emergency-docs-deploy.pub') }}"
         key_options: 'from="{{ emergency_docs_deploy_from }}",restrict,command="{{ rrsync_bin }} {{ emergency_docs_site_dir }}"'
         exclusive: true
+      when: not (first_setup_dry_run | bool)
 
     - name: Placeholder page until the first deploy (never overwrites the real site)
       ansible.builtin.copy:
@@ -97,6 +112,7 @@
         group: "{{ deploy_user }}"
         mode: "0644"
         force: false
+      when: not (first_setup_dry_run | bool)
 
     - name: LAN password file (readable by nginx's user only)
       ansible.builtin.copy:
@@ -105,7 +121,7 @@
         owner: root
         group: "101"        # nginx's user inside the container
         mode: "0640"
-      when: lan_enabled | bool
+      when: (lan_enabled | bool) and not (first_setup_dry_run | bool)
       no_log: true
       notify: [Test nginx config, Reload nginx]
 
@@ -123,7 +139,16 @@
         owner: root
         group: root
         mode: "0644"
+      when: not (first_setup_dry_run | bool)
       notify: [Test nginx config, Reload nginx]
+
+    - name: First setup, dry run - what couldn't be previewed
+      ansible.builtin.debug:
+        msg: >-
+          The deploy user and folders don't exist yet, so this dry run skipped: authorizing the
+          deploy key, the placeholder page, {{ 'the LAN password file, ' if lan_enabled | bool else '' }}and
+          the nginx config. A real run does them. After it, dry runs show everything.
+      when: first_setup_dry_run | bool
 
     - name: Is the Portainer stack's container running?
       ansible.builtin.command: docker inspect -f {% raw %}'{{.State.Running}}'{% endraw %} {{ container }}
