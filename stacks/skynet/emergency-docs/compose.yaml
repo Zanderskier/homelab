@@ -1,9 +1,8 @@
-# Web server for the family emergency guide. Portainer Git stack on the Portainer LXC
-# (little-skynet, next to Vaultwarden: if the vault is up, so is the guide).
+# Web server for the family emergency guide. Portainer Git stack, deployed to the Authentik LXC's
+# environment (CT 108 on skynet): the guide always needs an Authentik login, so it runs next to it.
 #
 # What it serves and how are files on the host, kept there by ansible/playbooks/emergency-docs.yml:
-#   /opt/emergency-docs/nginx/   default.conf (Authentik login on :8080, LAN fallback on :8081)
-#                                and htpasswd (the LAN fallback's password, only when it's on)
+#   /opt/emergency-docs/nginx/   default.conf (every request checked with Authentik)
 #   /srv/emergency-docs/site/    the built site, copied in by the private emergency-docs repo
 # Run that playbook BEFORE creating this stack, or Docker creates those folders empty. After a
 # config change the playbook tests it and reloads nginx; this stack doesn't need redeploying.
@@ -12,8 +11,7 @@ services:
     image: docker.io/library/nginx:1.31.9-alpine
     container_name: emergency-docs
     ports:
-      - "8090:8080"   # through the Cloudflare tunnel, Authentik login required
-      - "8091:8081"   # LAN fallback with a password; answers only once it's turned on
+      - "8090:8080"   # the digital-estate Cloudflare tunnel -> Authentik login required
     volumes:
       - /opt/emergency-docs/nginx:/etc/nginx/conf.d:ro
       - /srv/emergency-docs/site:/usr/share/nginx/html:ro

@@ -191,7 +191,7 @@ What each label means:
 | Audiobookshelf | Arr-Stack | http://192.168.50.199:13378 | Public |
 | Overseerr | Arr-Stack | http://192.168.50.199:5055 | Public |
 | Gitea | gittea-repo | http://192.168.50.124:3000 | Public |
-| Emergency guide (family docs, private repo) | Portainer-Lsky | http://192.168.50.81:8090 | Public (Authentik login) |
+| Emergency guide (family docs, private repo) | Authentik | http://192.168.50.151:8090 | Public (Authentik login, digital-estate tunnel) |
 | Kiwix (offline Wikipedia) | survival | http://192.168.50.131:8080 (being built) | LAN/VPN (planned: Public) |
 | Authentik (SSO) | Authentik | http://192.168.50.151:9000 | Public |
 | Portainer | Portainer-Lsky | https://192.168.50.81:9443 | Admin |
