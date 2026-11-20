@@ -34,7 +34,7 @@ on:
           - "docker - Docker CE on docker_hosts (new machine only)"
           - "host-backup - nightly PBS backup of host folders (install or update)"
           - "kiwix-update - monthly offline Wikipedia/ZIM update on survival (install or update)"
-          - "emergency-docs - web server for the family emergency guide (install or update)"
+          - "emergency-docs - family emergency guide: nginx config + deploy user (install or update)"
           - "portainer-discover - report only, changes nothing"
           - "timezone - same timezone on every machine (new machine only)"
           - "users - admin + break-glass accounts (new machine only)"

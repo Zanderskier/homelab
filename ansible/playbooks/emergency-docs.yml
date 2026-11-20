@@ -1,38 +1,27 @@
 ---
-# The web server for the family emergency guide, on the Portainer LXC (little-skynet, next to
-# Vaultwarden: if the vault is up, so is the guide).
+# Host side of the family emergency guide, on the Portainer LXC (little-skynet). The nginx
+# container itself is a Portainer Git stack (stacks/little-skynet/emergency-docs/compose.yaml);
+# this playbook keeps everything on the host that the container reads:
 #
-#   docs-deploy user   the emergency-docs repo's workflow copies the built site in as this user.
-#                      Its key (files/emergency-docs-deploy.pub) only runs rrsync, which can only
-#                      write into emergency_docs_site_dir, and only from the Docker runner's IP.
-#   nginx container    serves that folder:
-#                        :emergency_docs_port      through the tunnel, Authentik login required
-#                        :emergency_docs_lan_port  LAN fallback with a password, only when
-#                                                  emergency_docs_lan_htpasswd is in secrets.yml
+#   docs-deploy user   the private emergency-docs repo's workflow copies the built site in as this
+#                      user. Its key (files/emergency-docs-deploy.pub) only runs rrsync, which can
+#                      only write into emergency_docs_site_dir, and only from the Docker runner's IP.
+#   default.conf       nginx config: :8080 (tunnel) needs an Authentik login, :8081 (LAN fallback)
+#                      a password, only when emergency_docs_lan_htpasswd is in secrets.yml
+#   htpasswd           that password (hashed)
 #
-# Settings: inventory/host_vars/portainer.yml. The site's content is in the private repo, not here.
-# Check mode shows every file change and starts nothing.
-- name: Emergency docs web server
+# Run it BEFORE creating the Portainer stack (the stack mounts these folders). After a config
+# change it tests the new config inside the running container, then reloads nginx: no redeploy.
+# Settings: inventory/host_vars/portainer.yml. Check mode shows every file change and runs nothing.
+- name: Emergency docs (host side)
   hosts: portainer
   become: true
   gather_facts: false
   vars:
     deploy_user: docs-deploy
+    container: emergency-docs        # container_name in the stack's compose.yaml
     lan_enabled: "{{ emergency_docs_lan_htpasswd is defined }}"
   tasks:
-    - name: Check docker compose is installed
-      ansible.builtin.command: docker compose version --short
-      register: compose_version
-      changed_when: false
-      check_mode: false
-      failed_when: false
-
-    - name: Stop if it isn't
-      ansible.builtin.assert:
-        that: compose_version.rc == 0
-        fail_msg: This host has no `docker compose`. Run the docker playbook (docker.yml) on it first.
-        quiet: true
-
     - name: Check the LAN password line looks like an htpasswd entry (user:hash)
       ansible.builtin.assert:
         that: emergency_docs_lan_htpasswd is match('^[A-Za-z0-9._-]+:\$(apr1|2y|2b)\$')
@@ -83,7 +72,8 @@
         group: "{{ item.owner }}"
         mode: "{{ item.mode }}"
       loop:
-        - { path: "{{ emergency_docs_dir }}", owner: root, mode: "0755" }
+        - { path: "{{ emergency_docs_conf_dir | dirname }}", owner: root, mode: "0755" }
+        - { path: "{{ emergency_docs_conf_dir }}", owner: root, mode: "0755" }
         - { path: "{{ emergency_docs_site_dir | dirname }}", owner: root, mode: "0755" }
         - { path: "{{ emergency_docs_site_dir }}", owner: "{{ deploy_user }}", mode: "0755" }
 
@@ -110,53 +100,55 @@
 
     - name: LAN password file (readable by nginx's user only)
       ansible.builtin.copy:
-        dest: "{{ emergency_docs_dir }}/htpasswd"
+        dest: "{{ emergency_docs_conf_dir }}/htpasswd"
         content: "{{ emergency_docs_lan_htpasswd }}\n"
         owner: root
         group: "101"        # nginx's user inside the container
         mode: "0640"
       when: lan_enabled | bool
       no_log: true
-      notify: Restart nginx
+      notify: [Test nginx config, Reload nginx]
 
     - name: Remove the LAN password file when the fallback is off
       ansible.builtin.file:
-        path: "{{ emergency_docs_dir }}/htpasswd"
+        path: "{{ emergency_docs_conf_dir }}/htpasswd"
         state: absent
       when: not (lan_enabled | bool)
-      notify: Restart nginx
+      notify: [Test nginx config, Reload nginx]
 
-    - name: Install nginx.conf and compose.yaml
+    - name: Install the nginx config
       ansible.builtin.template:
-        src: "{{ playbook_dir }}/../templates/emergency-docs/{{ item }}.j2"
-        dest: "{{ emergency_docs_dir }}/{{ item }}"
+        src: "{{ playbook_dir }}/../templates/emergency-docs/default.conf.j2"
+        dest: "{{ emergency_docs_conf_dir }}/default.conf"
         owner: root
         group: root
         mode: "0644"
-      loop: [nginx.conf, compose.yaml]
-      register: config_files
-      notify: Restart nginx
+      notify: [Test nginx config, Reload nginx]
 
-    - name: Test the nginx config before using it
-      ansible.builtin.command: docker compose run --rm --no-deps web nginx -t
-      args:
-        chdir: "{{ emergency_docs_dir }}"
+    - name: Is the Portainer stack's container running?
+      ansible.builtin.command: docker inspect -f {% raw %}'{{.State.Running}}'{% endraw %} {{ container }}
+      register: container_state
       changed_when: false
-      when: config_files is changed
+      check_mode: false
+      failed_when: false
 
-    - name: Start (or update) the container
-      ansible.builtin.command: docker compose up -d --pull missing
-      args:
-        chdir: "{{ emergency_docs_dir }}"
-      register: compose_up
-      changed_when: "'Started' in compose_up.stderr or 'Recreated' in compose_up.stderr or 'Created' in compose_up.stderr"
+    - name: Remember the answer
+      ansible.builtin.set_fact:
+        container_running: "{{ container_state.rc == 0 and container_state.stdout == 'true' }}"
 
   handlers:
-    - name: Restart nginx
-      ansible.builtin.command: docker restart emergency-docs
-      args:
-        chdir: "{{ emergency_docs_dir }}"
+    # The config folder is mounted into the container, so it already sees the new files. Test them
+    # first: a broken config fails the run here and nginx keeps serving the old one, but only until
+    # the container restarts. Fix the template and run again before then.
+    - name: Test nginx config
+      ansible.builtin.command: docker exec {{ container }} nginx -t
+      changed_when: false
+      when: container_running | bool
+
+    - name: Reload nginx
+      ansible.builtin.command: docker exec {{ container }} nginx -s reload
       changed_when: true
+      when: container_running | bool
 
   post_tasks:
     - name: Without a login, the tunnel port must send the browser to Authentik
@@ -168,19 +160,23 @@
       retries: 5
       delay: 3
       until: tunnel_check.status == 302
+      when: container_running | bool
 
     - name: Without a password, the LAN port must refuse (401)
       ansible.builtin.uri:
         url: "http://127.0.0.1:{{ emergency_docs_lan_port }}/"
         status_code: 401
-      when: lan_enabled | bool
+      when: (container_running | bool) and (lan_enabled | bool)
 
     - name: Next steps
       vars:
         lan_note: >-
           {{ 'port ' ~ emergency_docs_lan_port ~ ' requires the LAN password' if lan_enabled | bool
           else 'the LAN fallback is off (no emergency_docs_lan_htpasswd)' }}
+        stack_note: >-
+          {{ 'Checked: port ' ~ emergency_docs_port ~ ' requires Authentik, ' ~ lan_note ~ '.' if container_running | bool
+          else 'The host side is ready. Now create the Portainer stack: stacks/little-skynet/emergency-docs/compose.yaml.' }}
       ansible.builtin.debug:
         msg:
-          - "nginx is up. Port {{ emergency_docs_port }} requires Authentik, {{ lan_note }}."
+          - "{{ stack_note }}"
           - "If you haven't yet: Authentik proxy provider + application, the tunnel route, then run the emergency-docs repo's deploy workflow."

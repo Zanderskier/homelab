@@ -1,20 +1,18 @@
 ---
-# Emergency docs site (playbooks/emergency-docs.yml): the family emergency guide, served by nginx
-# on this LXC. The content lives in a separate PRIVATE repo (alex/emergency-docs); its workflow
-# builds the site and copies it here over SSH as docs-deploy (rrsync: that user can only write
-# into emergency_docs_site_dir, and only from the Docker runner's IP).
+# Emergency docs (playbooks/emergency-docs.yml): the family emergency guide. The nginx container
+# is a Portainer Git stack (stacks/little-skynet/emergency-docs/compose.yaml); this playbook keeps
+# the host side it reads: its config, the LAN password and the site folder. The content lives in a
+# separate PRIVATE repo, whose workflow copies the built site in over SSH as docs-deploy (rrsync:
+# that user can only write into emergency_docs_site_dir, and only from the Docker runner's IP).
 
-# renovate: datasource=docker depName=docker.io/library/nginx
-emergency_docs_nginx_version: "1.30.7-alpine"
+# Must match the volumes in the stack's compose.yaml.
+emergency_docs_conf_dir: /opt/emergency-docs/nginx     # default.conf + htpasswd -> /etc/nginx/conf.d
+emergency_docs_site_dir: /srv/emergency-docs/site      # -> /usr/share/nginx/html
 
-# Published through the Cloudflare tunnel; every request is checked with Authentik first.
-emergency_docs_port: 8090
-# LAN-only fallback for when the internet (or Authentik) is down: a username + password from
-# emergency_docs_lan_htpasswd in /ansible_config/secrets.yml. Off unless that's defined.
-emergency_docs_lan_port: 8091
+# Must match the host ports in the stack's compose.yaml (used for the checks at the end).
+emergency_docs_port: 8090       # tunnel -> Authentik login
+emergency_docs_lan_port: 8091   # LAN fallback, only when emergency_docs_lan_htpasswd is in secrets.yml
 
-emergency_docs_dir: /opt/emergency-docs          # compose.yaml, nginx.conf, htpasswd
-emergency_docs_site_dir: /srv/emergency-docs/site
 emergency_docs_deploy_from: 192.168.50.90        # gitea-runner LXC: the only address the key works from
 
 # Authentik's embedded outpost, which answers nginx's "is this request logged in?" checks.
