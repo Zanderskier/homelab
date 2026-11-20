@@ -1,7 +1,7 @@
 # One Cloudflare tunnel carries every public hostname (gitea.failsafe.work, plex.failsafe.work, ...).
 # Hostname -> service routes live in Cloudflare Zero Trust: Networks > Tunnels > homelab > Public hostnames.
 #
-# Deploy this same stack on BOTH Proxmox hosts with the same TUNNEL_TOKEN. Cloudflare treats the two
+# Deploy this same stack on BOTH Proxmox hosts with the same TUNNEL_TOKEN1. Cloudflare treats the two
 # containers as replicas of one tunnel, so public access survives either host being down.
 services:
   cloudflared:
@@ -10,12 +10,4 @@ services:
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN1}
-    restart: unless-stopped
-
-  digital-estate:
-    image: docker.io/cloudflare/cloudflared:2026.11.1
-    container_name: digital-estate
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN2}
     restart: unless-stopped
