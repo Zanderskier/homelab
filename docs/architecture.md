@@ -8,8 +8,8 @@ How the homelab is put together, and why. The operational how-tos live next to t
 Two Proxmox VE 9 hosts run everything as LXCs (and one VM), split by role:
 
 - **skynet** (Dell Precision 5810, 64 GB ECC, Quadro P2200): media and the heavier services.
-  Plex, the *arr stack, Gitea, Authentik, Foundry, and the two CI runners (Docker for lint and
-  Renovate, host-mode for Ansible).
+  Plex, the *arr stack, Gitea, Authentik, the offline-knowledge LXC (Kiwix), and the two CI
+  runners (Docker for lint and Renovate, host-mode for Ansible).
 - **little-skynet** (Dell OptiPlex 7050, 16 GB): household apps that should stay up. Portainer
   (the single control plane for every Docker host), Vaultwarden, Paperless-ngx, Mealie, Uptime
   Kuma, cloudflared, and Immich in an Ubuntu VM.
@@ -91,8 +91,7 @@ Web apps use **Authentik** (OIDC) where they support it, with a break-glass loca
 | Photos, documents, Immich database (virtiofs share, which PBS can't see) | Critical-data backups to a second disk and a Raspberry Pi 4 |
 | Immich database | Immich's built-in daily dumps, plus a `pg_dumpall` before every upgrade |
 
-Restores have been tested, including a full rebuild after moving house. **Not yet done:** an
-offsite copy (3-2-1) and a UPS.
+**Not yet done:** a scheduled restore test from PBS, an offsite copy (3-2-1) and a UPS.
 
 ## Secrets
 

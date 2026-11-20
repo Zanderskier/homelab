@@ -25,5 +25,5 @@ portainer_backups_to_keep: 5
 # The standard agent's port. The server connects to tcp://<host>:9001.
 portainer_agent_port: 9001
 
-# Optional. Define portainer_agent_secret in /ansible_config/secrets.yml to make the server and all
-# agents share a secret (AGENT_SECRET), so an agent only obeys a server that knows it.
+# portainer_agent_secret in /ansible_config/secrets.yml: the server and all agents share it
+# (AGENT_SECRET), so an agent only obeys a server that knows it. Keep it set (see ansible/README.md).

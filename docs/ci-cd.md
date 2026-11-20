@@ -22,7 +22,7 @@ main branch ── Portainer GitOps polling (5 min) ──► docker compose up 
 
 | Auto-merge (minor/patch) | Always reviewed |
 |---|---|
-| cloudflared, homepage, tautulli, uptime-kuma, *arr stack (one grouped PR), audiobookshelf, gitea-runner, CI tooling | vaultwarden, paperless-ngx (+ gotenberg, tika), mealie, foundry-vtt, **Immich**, **every major version** |
+| cloudflared, homepage, tautulli, uptime-kuma, *arr stack (one grouped PR), audiobookshelf, gitea-runner, CI tooling | vaultwarden, paperless-ngx (+ gotenberg, tika), mealie, **Immich**, **every major version** |
 
 **Locked (no PRs at all):** qBittorrent. Its tag is changed by hand.
 
