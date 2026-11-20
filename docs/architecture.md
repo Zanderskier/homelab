@@ -82,6 +82,11 @@ Root and password SSH logins are off on every host. The hardening playbook:
 - puts the old config back automatically if any check fails
 
 Web apps use **Authentik** (OIDC) where they support it, with a break-glass local account in each.
+Apps with no login of their own (Kiwix) are put behind Authentik's **embedded proxy outpost**: their
+public hostname points at Authentik (`:9000`), which matches the hostname to a proxy provider,
+requires a login and membership of that app's group, then forwards to the app on the LAN. Apps
+with phone or TV clients stay on their own login or OIDC, because those clients can't pass a
+browser login page.
 
 ## Backups
 

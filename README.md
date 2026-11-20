@@ -58,6 +58,7 @@ flowchart TB
 
     CF --> CFD["cloudflared"]
     CFD --> PUB["Public apps<br/>Immich · Vaultwarden · Plex · Paperless · Mealie"]
+    CFD -- "Authentik login + group check" --> AKP["Apps with no login of their own<br/>Kiwix"]
     CFD -. "login required, verified 401/403" .-> ADM["Admin UIs<br/>Portainer · *arr · Uptime Kuma"]
     VPN --> LAN["Everything on the LAN<br/>Proxmox · PBS · SSH · Pi-hole"]
 ```
@@ -188,6 +189,8 @@ LAN `192.168.50.0/24`. Every address is a DHCP reservation.
 
 What each label means:
 - **Public:** published through the tunnel.
+- **Behind Authentik:** public, but the tunnel sends it to Authentik's proxy, which requires a login
+  and membership of the app's group before passing the request on.
 - **Admin:** reachable through the tunnel, but the hostname isn't listed, and the app's own login is
   required (verified to return 401/403 without credentials).
 - **LAN/VPN:** not exposed at all.
@@ -202,7 +205,7 @@ What each label means:
 | Audiobookshelf | Arr-Stack | http://192.168.50.199:13378 | Public |
 | Overseerr | Arr-Stack | http://192.168.50.199:5055 | Public |
 | Gitea | gittea-repo | http://192.168.50.124:3000 | Public |
-| Kiwix (offline Wikipedia) | survival | http://192.168.50.131:8080 | LAN/VPN (next: Public, behind Authentik) |
+| Kiwix (offline Wikipedia) | survival | http://192.168.50.131:8080 | Behind Authentik (LAN: direct) |
 | Authentik (SSO) | Authentik | http://192.168.50.151:9000 | Public |
 | Portainer | Portainer-Lsky | https://192.168.50.81:9443 | Admin |
 | Uptime Kuma | Portainer-Lsky | http://192.168.50.81:3001 | Admin |
@@ -229,7 +232,7 @@ What each label means:
 - [x] PBS per-host namespaces, prune jobs, and backups of bind-mounted host data
 - [x] Offline knowledge LXC: Kiwix with monthly, checksum-verified, never-deleting updates
 - [x] One timezone (Pacific) on every machine, set by Ansible
-- [ ] Kiwix public through its own Cloudflare tunnel, behind Authentik
+- [x] Kiwix public behind Authentik (proxy outpost, group-restricted)
 - [ ] Scheduled restore test from PBS (restore a guest and the host-backup archives, check they start)
 - [ ] Monitoring and alerting (failed jobs, backups, disk health → push notifications)
 - [ ] Gitea, Authentik, Plex, Pi-hole as code in this repo
