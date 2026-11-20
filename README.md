@@ -12,7 +12,7 @@ that are actually restored.
 ## Highlights
 
 - **GitOps deployments.** Portainer redeploys Docker stacks from `main`. Ansible deploys the one
-  VM-based app (Immich), runs Portainer itself (one server, five agents, one pinned version) and
+  VM-based app (Immich), runs Portainer itself (one server, six agents, one pinned version) and
   manages the OS on every host.
 - **Automated, reviewable updates.** Every image is pinned, and Renovate turns each upstream
   release into a pull request.
@@ -22,6 +22,15 @@ that are actually restored.
 - **Fleet patching with Ansible.** 16 hosts (Proxmox VE/PBS, LXCs, a VM, Raspberry Pis) are
   patched weekly, after the nightly backups. Hosts go one at a time, and the run stops at the first
   failure.
+- **Backups with retention and least privilege.**
+  - Every LXC and VM goes to Proxmox Backup Server nightly, each host in its own namespace, pruned
+    to 7 daily / 4 weekly / 6 monthly.
+  - Bind-mounted data that Proxmox backups skip (Gitea, Immich photos, the offline library) is sent
+    by an Ansible-managed job with a backup-only API token. Nightly runs read only changed files;
+    a weekly run reads everything.
+- **Offline knowledge library.** A "survival" LXC serves Wikipedia (full, with images), medical,
+  repair and preparedness references with Kiwix. A monthly job downloads new versions, checks
+  their checksum and size, and never deletes an old copy, so nothing removed upstream is lost here.
 - **SSH hardening across the fleet.**
   - No root logins and no password logins: keys only, served from a password manager's SSH agent.
   - A break-glass account that works only from the LAN or VPN.
@@ -118,8 +127,10 @@ stacks/<host>/<app>/compose.yaml   one Docker stack each (+ .env.example listing
 stacks/shared/cloudflared/         the Cloudflare tunnel connector
 stacks/little-skynet/immich/       deployed by Ansible, not Portainer
 ansible/                           inventory, playbooks, bootstrap scripts (see ansible/README.md)
-  playbooks/  ping · patch-guests · patch-hosts · users · harden-ssh · immich ·
-              portainer · portainer-discover · docker-cleanup
+  playbooks/  ping · patch-guests · patch-hosts · users · harden-ssh · timezone · docker ·
+              immich · portainer · portainer-discover · docker-cleanup · host-backup ·
+              kiwix-update
+  templates/  scripts and systemd units the playbooks install (host-backup, kiwix-update)
 .gitea/workflows/
   lint.yml        compose validation, pin check, secret scan, ansible syntax + lint
   renovate.yml    Renovate every 4 hours
@@ -191,7 +202,7 @@ What each label means:
 | Audiobookshelf | Arr-Stack | http://192.168.50.199:13378 | Public |
 | Overseerr | Arr-Stack | http://192.168.50.199:5055 | Public |
 | Gitea | gittea-repo | http://192.168.50.124:3000 | Public |
-| Kiwix (offline Wikipedia) | survival | http://192.168.50.131:8080 (being built) | LAN/VPN (planned: Public) |
+| Kiwix (offline Wikipedia) | survival | http://192.168.50.131:8080 | LAN/VPN (next: Public, behind Authentik) |
 | Authentik (SSO) | Authentik | http://192.168.50.151:9000 | Public |
 | Portainer | Portainer-Lsky | https://192.168.50.81:9443 | Admin |
 | Uptime Kuma | Portainer-Lsky | http://192.168.50.81:3001 | Admin |
@@ -215,6 +226,10 @@ What each label means:
 - [x] Immich: reviewed upgrades with pre-update DB dumps, health and version checks
 - [x] Portainer: one server + standard agents on one pinned version, managed by Ansible, deployed on merge
 - [x] Docker CE on every Docker host (moved the last three LXCs off Debian's docker.io 20.10)
+- [x] PBS per-host namespaces, prune jobs, and backups of bind-mounted host data
+- [x] Offline knowledge LXC: Kiwix with monthly, checksum-verified, never-deleting updates
+- [x] One timezone (Pacific) on every machine, set by Ansible
+- [ ] Kiwix public through its own Cloudflare tunnel, behind Authentik
 - [ ] Scheduled restore test from PBS (restore a guest and the host-backup archives, check they start)
 - [ ] Monitoring and alerting (failed jobs, backups, disk health → push notifications)
 - [ ] Gitea, Authentik, Plex, Pi-hole as code in this repo

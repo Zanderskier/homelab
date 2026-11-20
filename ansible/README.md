@@ -379,14 +379,16 @@ need the old files.
 ## Host folder backups (`host-backup`)
 
 Proxmox backs up each container's own disk, but **never its bind mounts** (`mpX: /mnt/...`). On
-skynet, Gitea, Authentik and gitea-runner keep their data on `/mnt/nvme1`, a bind mount, so it was
-in no backup until this. Every night at 02:30 (before the 03:00 Proxmox backups), skynet runs:
+skynet, Gitea, Authentik and gitea-runner keep their data on `/mnt/nvme1`, and the survival LXC's
+Kiwix library is on `/mnt/nvme0`. Both are bind mounts, so they were in no backup until this.
+Every night at 02:30 (before the 03:00 Proxmox backups), skynet runs:
 
 ```
-1. check /mnt/nvme1 is a mounted drive    fstab has nofail: a dead drive leaves an empty folder,
+1. check each folder is a mounted drive   fstab has nofail: a dead drive leaves an empty folder,
                                           and backing that up would look like success
 2. pg_dumpall Gitea's database            -> /mnt/nvme1/db-dumps/ (newest 3 kept), a consistent copy
-3. proxmox-backup-client backup           -> PBS, namespace "hosts", backup host/skynet (nvme1.pxar)
+3. proxmox-backup-client backup           -> PBS, namespace "hosts", backup host/skynet
+                                          (nvme1.mpxar/.ppxar, nvme0.mpxar/.ppxar)
 ```
 
 - **What's backed up:** `inventory/host_vars/skynet.yml`. **PBS details:** `group_vars/all.yml`.

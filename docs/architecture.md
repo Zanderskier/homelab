@@ -87,9 +87,13 @@ Web apps use **Authentik** (OIDC) where they support it, with a break-glass loca
 
 | Data | Protection |
 |---|---|
-| Every LXC and the Immich VM's disk | **Proxmox Backup Server**, nightly (skynet 03:00, little-skynet 03:30) |
-| Photos, documents, Immich database (virtiofs share, which PBS can't see) | Critical-data backups to a second disk and a Raspberry Pi 4 |
+| Every LXC and the Immich VM's disk | **Proxmox Backup Server**, nightly (skynet 03:00, little-skynet 03:30), one namespace per host |
+| Bind-mounted data PBS's guest backups skip: Gitea/Authentik (`/mnt/nvme1`), the Kiwix library (`/mnt/nvme0`), Immich photos (`/mnt/second-drive`) | **host-backup** (Ansible): nightly to PBS namespace `hosts` with a backup-only token; changed files only, full read on Sundays |
+| Photos, documents, Immich database | Also critical-data backups to a second disk and a Raspberry Pi 4 |
 | Immich database | Immich's built-in daily dumps, plus a `pg_dumpall` before every upgrade |
+
+**Retention:** a PBS prune job per namespace keeps 7 daily, 4 weekly and 6 monthly snapshots; one
+daily verify job checks them.
 
 **Not yet done:** a scheduled restore test from PBS, an offsite copy (3-2-1) and a UPS.
 
