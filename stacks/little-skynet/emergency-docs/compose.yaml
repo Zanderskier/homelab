@@ -9,7 +9,7 @@
 # config change the playbook tests it and reloads nginx; this stack doesn't need redeploying.
 services:
   emergency-docs:
-    image: docker.io/library/nginx:1.30.7-alpine
+    image: docker.io/library/nginx:1.31.9-alpine
     container_name: emergency-docs
     ports:
       - "8090:8080"   # through the Cloudflare tunnel, Authentik login required
