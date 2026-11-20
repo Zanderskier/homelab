@@ -141,8 +141,8 @@ Then add it to `inventory/hosts.yml` and `known_hosts`, and run `users` + `harde
 On the Ansible LXC:
 
 ```bash
-ssh-keyscan -t ed25519 192.168.50.8 192.168.50.220 192.168.50.199 192.168.50.3 192.168.50.88 \
-  192.168.50.151 192.168.50.246 192.168.50.81 192.168.50.106 192.168.50.124 192.168.50.2
+# every ansible_host in the inventory
+grep -oE 'ansible_host: [0-9.]+' inventory/hosts.yml | cut -d' ' -f2 | xargs ssh-keyscan -t ed25519
 ```
 
 Paste the output into `ansible/known_hosts` and commit it. Re-scan a host if you rebuild it.
@@ -349,13 +349,16 @@ docker compose up -d
 Then set `portainer_version` back to that version in the repo, so the next run doesn't upgrade
 again. If the host itself is broken, restore the LXC from PBS instead.
 
-### Optional shared secret
+### Shared agent secret
 
-Agents are set up without a shared secret: an agent obeys the first Portainer server that
-connects to it after each restart. The playbook connects right after starting each agent, which
-keeps that window to seconds. To close it completely, add `portainer_agent_secret: '...'` to
-`/ansible_config/secrets.yml` and run the playbook: the server and every agent then get the same
-`AGENT_SECRET`.
+The server and every agent share one `AGENT_SECRET`, from `portainer_agent_secret` in
+`/ansible_config/secrets.yml`, so an agent only obeys a server that knows it. Without it, an agent
+obeys the first Portainer server that connects after each restart, and since agents mount `/` and
+the Docker socket, that would be root on the host for anything on the LAN or VPN.
+
+To rotate it: generate a new value (`openssl rand -base64 32`), replace it in `secrets.yml` and
+Vaultwarden, then run the **portainer** playbook (dry run first). The compose files that hold it are
+mode 600 and never shown in a diff, so the secret stays out of the Actions log.
 
 ## Housekeeping (`docker-cleanup`)
 

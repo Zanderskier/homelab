@@ -215,6 +215,7 @@ What each label means:
 - [x] Immich: reviewed upgrades with pre-update DB dumps, health and version checks
 - [x] Portainer: one server + standard agents on one pinned version, managed by Ansible, deployed on merge
 - [x] Docker CE on every Docker host (moved the last three LXCs off Debian's docker.io 20.10)
+- [ ] Scheduled restore test from PBS (restore a guest and the host-backup archives, check they start)
 - [ ] Monitoring and alerting (failed jobs, backups, disk health → push notifications)
 - [ ] Gitea, Authentik, Plex, Pi-hole as code in this repo
 - [ ] Managed switch + VLANs (management / servers / trusted / IoT / guest)

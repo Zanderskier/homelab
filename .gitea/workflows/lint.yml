@@ -57,6 +57,13 @@ jobs:
           if git ls-files | grep -E '(^|/)(\.env|stack\.env)$'; then
             echo "::error::Env file committed."; exit 1
           fi
+          # A password/secret/token/key/cookie set to a literal value instead of a ${VAR} from
+          # Portainer, e.g. "POSTGRES_PASSWORD: mealie" or "- API_KEY=abc". Empty values, ${VAR},
+          # bare names (passed through from Portainer) and "{{ jinja }}" values are fine.
+          pattern='^[[:space:]]*-?[[:space:]]*[A-Za-z0-9_]*(PASS|PASSWORD|SECRET|TOKEN|_KEY|COOKIE)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*[^[:space:]$#{"'"'"']'
+          if git ls-files -z stacks ansible/templates | xargs -0 grep -nE "$pattern"; then
+            echo "::error::Hardcoded secret. Use \${VAR} and set the value in Portainer."; exit 1
+          fi
 
   # Not part of the required "lint / compose*" check, so a style warning here never blocks a merge.
   ansible:

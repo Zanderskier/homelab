@@ -4,11 +4,11 @@ services:
     container_name: mealie
     restart: always
     ports:
-        - "9925:9000" 
+      - "9925:9000"
     deploy:
       resources:
         limits:
-          memory: 1000M 
+          memory: 1000M
     volumes:
       - /main/mealie/mealie-data:/app/data/
     environment:
@@ -16,12 +16,12 @@ services:
       ALLOW_SIGNUP: "false"
       PUID: 1000
       PGID: 1000
-      TZ: America/Anchorage
+      TZ: ${TZ:-America/Los_Angeles}
       BASE_URL: ${MEALIE_BASE_URL:-https://mealie.yourdomain.com}
       # Database Settings
       DB_ENGINE: postgres
       POSTGRES_USER: mealie
-      POSTGRES_PASSWORD: mealie
+      POSTGRES_PASSWORD: ${MEALIE_DB_PASSWORD:?set MEALIE_DB_PASSWORD in Portainer}
       POSTGRES_SERVER: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: mealie
@@ -36,7 +36,8 @@ services:
     volumes:
       - /main/mealie/mealie-pgdata:/var/lib/postgresql/data
     environment:
-      POSTGRES_PASSWORD: mealie
+      # Only read when the database is first created. To change it, see docs/secrets.md.
+      POSTGRES_PASSWORD: ${MEALIE_DB_PASSWORD:?set MEALIE_DB_PASSWORD in Portainer}
       POSTGRES_USER: mealie
       PGUSER: mealie
       POSTGRES_DB: mealie
