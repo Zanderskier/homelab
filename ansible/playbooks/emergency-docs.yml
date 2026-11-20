@@ -1,0 +1,180 @@
+---
+# The web server for the family emergency guide, on the Portainer LXC (little-skynet, next to
+# Vaultwarden: if the vault is up, so is the guide).
+#
+#   docs-deploy user   the emergency-docs repo's workflow copies the built site in as this user.
+#                      Its key (files/emergency-docs-deploy.pub) only runs rrsync, which can only
+#                      write into emergency_docs_site_dir, and only from the Docker runner's IP.
+#   nginx container    serves that folder:
+#                        :emergency_docs_port      through the tunnel, Authentik login required
+#                        :emergency_docs_lan_port  LAN fallback with a password, only when
+#                                                  emergency_docs_lan_htpasswd is in secrets.yml
+#
+# Settings: inventory/host_vars/portainer.yml. The site's content is in the private repo, not here.
+# Check mode shows every file change and starts nothing.
+- name: Emergency docs web server
+  hosts: portainer
+  become: true
+  gather_facts: false
+  vars:
+    deploy_user: docs-deploy
+    lan_enabled: "{{ emergency_docs_lan_htpasswd is defined }}"
+  tasks:
+    - name: Check docker compose is installed
+      ansible.builtin.command: docker compose version --short
+      register: compose_version
+      changed_when: false
+      check_mode: false
+      failed_when: false
+
+    - name: Stop if it isn't
+      ansible.builtin.assert:
+        that: compose_version.rc == 0
+        fail_msg: This host has no `docker compose`. Run the docker playbook (docker.yml) on it first.
+        quiet: true
+
+    - name: Check the LAN password line looks like an htpasswd entry (user:hash)
+      ansible.builtin.assert:
+        that: emergency_docs_lan_htpasswd is match('^[A-Za-z0-9._-]+:\$(apr1|2y|2b)\$')
+        fail_msg: >-
+          emergency_docs_lan_htpasswd in secrets.yml should be one line, "username:hash", made with
+          `printf 'USERNAME:%s\n' "$(openssl passwd -apr1)"` (see ansible/README.md).
+        quiet: true
+      when: lan_enabled | bool
+      no_log: true
+
+    - name: Install rsync (rrsync, the restricted receiver, comes with it)
+      ansible.builtin.apt:
+        name: rsync
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    # Debian 12+ ships it as /usr/bin/rrsync (a Python script). Older releases only had an
+    # example copy under /usr/share/doc, which isn't runnable as-is.
+    - name: Find rrsync
+      ansible.builtin.command: sh -c 'command -v rrsync'
+      register: rrsync_path
+      changed_when: false
+      check_mode: false
+      failed_when: false
+
+    - name: Stop if there's no rrsync
+      ansible.builtin.assert:
+        # In a dry run rsync may not be installed yet (the install above only says it would).
+        that: rrsync_path.rc == 0 or ansible_check_mode
+        fail_msg: rsync is installed but has no rrsync (needs Debian 12 or newer). Upgrade the LXC first.
+        quiet: true
+
+    - name: Create the deploy user (no password; only its key can log in)
+      ansible.builtin.user:
+        name: "{{ deploy_user }}"
+        comment: Emergency docs deploy (rrsync only)
+        shell: /bin/sh
+        password: "*"
+        create_home: true
+        system: true
+
+    - name: Folders
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.owner }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ emergency_docs_dir }}", owner: root, mode: "0755" }
+        - { path: "{{ emergency_docs_site_dir | dirname }}", owner: root, mode: "0755" }
+        - { path: "{{ emergency_docs_site_dir }}", owner: "{{ deploy_user }}", mode: "0755" }
+
+    - name: Authorize the deploy key (rrsync into the site folder, from the runner only)
+      ansible.posix.authorized_key:
+        user: "{{ deploy_user }}"
+        key: "{{ lookup('ansible.builtin.file', playbook_dir + '/../files/emergency-docs-deploy.pub') }}"
+        key_options: 'from="{{ emergency_docs_deploy_from }}",restrict,command="{{ rrsync_path.stdout_lines | first | default("/usr/bin/rrsync") }} {{ emergency_docs_site_dir }}"'
+        exclusive: true
+
+    - name: Placeholder page until the first deploy (never overwrites the real site)
+      ansible.builtin.copy:
+        dest: "{{ emergency_docs_site_dir }}/index.html"
+        content: |
+          <!doctype html><meta charset="utf-8"><title>Not published yet</title>
+          <p>The emergency guide hasn't been published here yet. Run the deploy workflow in the
+          emergency-docs repo.</p>
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+        mode: "0644"
+        force: false
+
+    - name: LAN password file (readable by nginx's user only)
+      ansible.builtin.copy:
+        dest: "{{ emergency_docs_dir }}/htpasswd"
+        content: "{{ emergency_docs_lan_htpasswd }}\n"
+        owner: root
+        group: "101"        # nginx's user inside the container
+        mode: "0640"
+      when: lan_enabled | bool
+      no_log: true
+      notify: Restart nginx
+
+    - name: Remove the LAN password file when the fallback is off
+      ansible.builtin.file:
+        path: "{{ emergency_docs_dir }}/htpasswd"
+        state: absent
+      when: not (lan_enabled | bool)
+      notify: Restart nginx
+
+    - name: Install nginx.conf and compose.yaml
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/emergency-docs/{{ item }}.j2"
+        dest: "{{ emergency_docs_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: [nginx.conf, compose.yaml]
+      register: config_files
+      notify: Restart nginx
+
+    - name: Test the nginx config before using it
+      ansible.builtin.command: docker compose run --rm --no-deps web nginx -t
+      args:
+        chdir: "{{ emergency_docs_dir }}"
+      changed_when: false
+      when: config_files is changed
+
+    - name: Start (or update) the container
+      ansible.builtin.command: docker compose up -d --pull missing
+      args:
+        chdir: "{{ emergency_docs_dir }}"
+      register: compose_up
+      changed_when: "'Started' in compose_up.stderr or 'Recreated' in compose_up.stderr or 'Created' in compose_up.stderr"
+
+  handlers:
+    - name: Restart nginx
+      ansible.builtin.command: docker restart emergency-docs
+      args:
+        chdir: "{{ emergency_docs_dir }}"
+      changed_when: true
+
+  post_tasks:
+    - name: Without a login, the tunnel port must send the browser to Authentik
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ emergency_docs_port }}/"
+        follow_redirects: none
+        status_code: 302
+      register: tunnel_check
+      retries: 5
+      delay: 3
+      until: tunnel_check.status == 302
+
+    - name: Without a password, the LAN port must refuse (401)
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ emergency_docs_lan_port }}/"
+        status_code: 401
+      when: lan_enabled | bool
+
+    - name: Next steps
+      ansible.builtin.debug:
+        msg:
+          - "nginx is up. Port {{ emergency_docs_port }} requires Authentik, {{ 'port ' ~ emergency_docs_lan_port ~ ' requires the LAN password' if lan_enabled | bool else 'the LAN fallback is off (no emergency_docs_lan_htpasswd)' }}."
+          - "If you haven't yet: Authentik proxy provider + application, the tunnel route, then run the emergency-docs repo's deploy workflow."

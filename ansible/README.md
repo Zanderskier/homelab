@@ -32,6 +32,7 @@ ansible/
     docker.yml             Docker CE from Docker's own repository on the docker_hosts group
     timezone.yml           same timezone (group_vars/all.yml) on every machine
     kiwix-update.yml       monthly update of the offline Wikipedia/ZIM files on survival (never deletes)
+    emergency-docs.yml     web server for the family emergency guide (content is in a private repo)
   templates/               compose files the playbooks render onto hosts
   files/                   scripts and keys the playbooks copy to hosts
   run-playbook.sh          what every workflow calls: prints what, why, mode and hosts first,
@@ -71,6 +72,7 @@ Usually none: the schedule and the two deploy workflows cover normal operation.
 | `users`, `harden-ssh` | a new machine, or a password change | Yes |
 | `timezone` | a new machine, or a schedule runs at the wrong hour | Yes (timezone only) |
 | `kiwix-update` | you changed the ZIM list in `host_vars/survival.yml`, or want an update now (`kiwix_update_run_now=true`) | Yes (script + timer; the download runs on survival) |
+| `emergency-docs` | first setup of the emergency guide's web server, after changing its template or nginx version, or to turn the LAN fallback on/off | Yes (deploy user, nginx container) |
 | `docker` | a new Docker machine (add it to `docker_hosts` in the inventory first) | Yes (installs Docker only) |
 
 Safety on the Run workflow form:
@@ -423,6 +425,35 @@ proxmox-backup-client restore --ns hosts host/skynet/<time> nvme1.mpxar /mnt/nvm
 
 For Gitea, stop its containers, put the files back, then (if the database files are damaged) load
 the newest dump from `db-dumps/` into a fresh `gitea-db` with `gunzip -c ... | psql -U gitea`.
+
+## Emergency docs (`emergency-docs`)
+
+A family emergency guide (what to do if something happens to me) is served from the Portainer
+LXC, next to Vaultwarden. Its **content is in a separate private repo**, because it holds personal
+details; this repo has only the web server. That repo's workflow builds the site and copies it in.
+
+```
+private emergency-docs repo ─push─► Docker runner: build site + videos ─┬─ rsync as docs-deploy ─► nginx on 192.168.50.81
+                                                                        └─ Cloudflare Pages (backup copy, Cloudflare Access)
+```
+
+| Port | Reached through | Login |
+|---|---|---|
+| `emergency_docs_port` (8090) | the Cloudflare tunnel | Authentik (nginx forward auth to the embedded outpost) |
+| `emergency_docs_lan_port` (8091) | the LAN only, for when the internet or Authentik is down | a username + password (HTTP basic auth) |
+
+- **The deploy user** (`docs-deploy`) has no password. Its key, `files/emergency-docs-deploy.pub`,
+  only works from the Docker runner's IP and can only run `rrsync` into the site folder: no shell,
+  no reading anything else, no forwarding.
+- **The LAN fallback** is off until `/ansible_config/secrets.yml` has one htpasswd line:
+  ```bash
+  printf 'USERNAME:%s\n' "$(openssl passwd -apr1)"     # on the Ansible LXC; asks for the password
+  ```
+  ```yaml
+  emergency_docs_lan_htpasswd: 'USERNAME:$apr1$...'     # single quotes: the hash contains $
+  ```
+- Settings are in `inventory/host_vars/portainer.yml`. Renovate proposes nginx updates there;
+  run the playbook after merging one.
 
 ## Adding a machine
 

@@ -29,6 +29,7 @@ case "$PLAYBOOK" in
   kiwix-update)       WHAT="Installs/updates the monthly Kiwix ZIM update on survival. extra_vars kiwix_update_run_now=true also starts one now (in the background)." ;;
   host-backup)        WHAT="Installs/updates the nightly backup of host folders (e.g. /mnt/nvme1) to PBS. extra_vars host_backup_run_now=true also runs one now." ;;
   timezone)           WHAT="Sets every machine to the timezone in group_vars/all.yml. Only needed for a new machine or a timezone change." ;;
+  emergency-docs)     WHAT="Web server for the family emergency guide on the Portainer LXC (nginx behind Authentik, deploy user). The content is deployed from its own repo." ;;
   portainer-discover) WHAT="Report only. Shows Docker + Portainer on every host. Changes nothing." ;;
   *) echo "Unknown playbook '$PLAYBOOK'."; exit 1 ;;
 esac

@@ -119,7 +119,7 @@ stacks/shared/cloudflared/         the Cloudflare tunnel connector
 stacks/little-skynet/immich/       deployed by Ansible, not Portainer
 ansible/                           inventory, playbooks, bootstrap scripts (see ansible/README.md)
   playbooks/  ping · patch-guests · patch-hosts · users · harden-ssh · immich ·
-              portainer · portainer-discover · docker-cleanup
+              portainer · portainer-discover · docker-cleanup · emergency-docs
 .gitea/workflows/
   lint.yml        compose validation, pin check, secret scan, ansible syntax + lint
   renovate.yml    Renovate every 4 hours
@@ -191,6 +191,7 @@ What each label means:
 | Audiobookshelf | Arr-Stack | http://192.168.50.199:13378 | Public |
 | Overseerr | Arr-Stack | http://192.168.50.199:5055 | Public |
 | Gitea | gittea-repo | http://192.168.50.124:3000 | Public |
+| Emergency guide (family docs, private repo) | Portainer-Lsky | http://192.168.50.81:8090 | Public (Authentik login) |
 | Kiwix (offline Wikipedia) | survival | http://192.168.50.131:8080 (being built) | LAN/VPN (planned: Public) |
 | Authentik (SSO) | Authentik | http://192.168.50.151:9000 | Public |
 | Portainer | Portainer-Lsky | https://192.168.50.81:9443 | Admin |

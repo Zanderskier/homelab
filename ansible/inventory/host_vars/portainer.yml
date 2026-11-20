@@ -1,0 +1,21 @@
+---
+# Emergency docs site (playbooks/emergency-docs.yml): the family emergency guide, served by nginx
+# on this LXC. The content lives in a separate PRIVATE repo (alex/emergency-docs); its workflow
+# builds the site and copies it here over SSH as docs-deploy (rrsync: that user can only write
+# into emergency_docs_site_dir, and only from the Docker runner's IP).
+
+# renovate: datasource=docker depName=docker.io/library/nginx
+emergency_docs_nginx_version: "1.30.7-alpine"
+
+# Published through the Cloudflare tunnel; every request is checked with Authentik first.
+emergency_docs_port: 8090
+# LAN-only fallback for when the internet (or Authentik) is down: a username + password from
+# emergency_docs_lan_htpasswd in /ansible_config/secrets.yml. Off unless that's defined.
+emergency_docs_lan_port: 8091
+
+emergency_docs_dir: /opt/emergency-docs          # compose.yaml, nginx.conf, htpasswd
+emergency_docs_site_dir: /srv/emergency-docs/site
+emergency_docs_deploy_from: 192.168.50.90        # gitea-runner LXC: the only address the key works from
+
+# Authentik's embedded outpost, which answers nginx's "is this request logged in?" checks.
+authentik_outpost_url: http://192.168.50.151:9000
