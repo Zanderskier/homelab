@@ -88,10 +88,12 @@
         - { path: "{{ emergency_docs_site_dir }}", owner: "{{ deploy_user }}", mode: "0755" }
 
     - name: Authorize the deploy key (rrsync into the site folder, from the runner only)
+      vars:
+        rrsync_bin: "{{ rrsync_path.stdout_lines | first | default('/usr/bin/rrsync') }}"
       ansible.posix.authorized_key:
         user: "{{ deploy_user }}"
         key: "{{ lookup('ansible.builtin.file', playbook_dir + '/../files/emergency-docs-deploy.pub') }}"
-        key_options: 'from="{{ emergency_docs_deploy_from }}",restrict,command="{{ rrsync_path.stdout_lines | first | default("/usr/bin/rrsync") }} {{ emergency_docs_site_dir }}"'
+        key_options: 'from="{{ emergency_docs_deploy_from }}",restrict,command="{{ rrsync_bin }} {{ emergency_docs_site_dir }}"'
         exclusive: true
 
     - name: Placeholder page until the first deploy (never overwrites the real site)
@@ -174,7 +176,11 @@
       when: lan_enabled | bool
 
     - name: Next steps
+      vars:
+        lan_note: >-
+          {{ 'port ' ~ emergency_docs_lan_port ~ ' requires the LAN password' if lan_enabled | bool
+          else 'the LAN fallback is off (no emergency_docs_lan_htpasswd)' }}
       ansible.builtin.debug:
         msg:
-          - "nginx is up. Port {{ emergency_docs_port }} requires Authentik, {{ 'port ' ~ emergency_docs_lan_port ~ ' requires the LAN password' if lan_enabled | bool else 'the LAN fallback is off (no emergency_docs_lan_htpasswd)' }}."
+          - "nginx is up. Port {{ emergency_docs_port }} requires Authentik, {{ lan_note }}."
           - "If you haven't yet: Authentik proxy provider + application, the tunnel route, then run the emergency-docs repo's deploy workflow."
