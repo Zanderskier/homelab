@@ -11,11 +11,3 @@ services:
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN1}
     restart: unless-stopped
-
-  digital-estate:
-    image: docker.io/cloudflare/cloudflared:2026.11.1
-    container_name: digital-estate
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN2}
-    restart: unless-stopped

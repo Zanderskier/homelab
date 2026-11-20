@@ -32,7 +32,6 @@ ansible/
     docker.yml             Docker CE from Docker's own repository on the docker_hosts group
     timezone.yml           same timezone (group_vars/all.yml) on every machine
     kiwix-update.yml       monthly update of the offline Wikipedia/ZIM files on survival (never deletes)
-    emergency-docs.yml     host side of the family emergency guide on the Authentik LXC: nginx config, deploy user (the container is a Portainer stack)
   templates/               compose files the playbooks render onto hosts
   files/                   scripts and keys the playbooks copy to hosts
   run-playbook.sh          what every workflow calls: prints what, why, mode and hosts first,
@@ -72,7 +71,6 @@ Usually none: the schedule and the two deploy workflows cover normal operation.
 | `users`, `harden-ssh` | a new machine, or a password change | Yes |
 | `timezone` | a new machine, or a schedule runs at the wrong hour | Yes (timezone only) |
 | `kiwix-update` | you changed the ZIM list in `host_vars/survival.yml`, or want an update now (`kiwix_update_run_now=true`) | Yes (script + timer; the download runs on survival) |
-| `emergency-docs` | first setup of the emergency guide (before creating its Portainer stack), or after changing its nginx template | Yes (deploy user, nginx config; reloads nginx) |
 | `docker` | a new Docker machine (add it to `docker_hosts` in the inventory first) | Yes (installs Docker only) |
 
 Safety on the Run workflow form:
@@ -425,69 +423,6 @@ proxmox-backup-client restore --ns hosts host/skynet/<time> nvme1.mpxar /mnt/nvm
 
 For Gitea, stop its containers, put the files back, then (if the database files are damaged) load
 the newest dump from `db-dumps/` into a fresh `gitea-db` with `gunzip -c ... | psql -U gitea`.
-
-## Emergency docs (`emergency-docs`)
-
-A family emergency guide (what to do if something happens to me) is served from the **Authentik
-LXC** (CT 108, skynet). It always needs an Authentik login, so it runs next to Authentik: if
-Authentik is down, so is the guide, and nothing else would let anyone in anyway. Its **content is
-in a separate private repo**, because it holds personal details; this repo has only the web
-server, in two parts:
-
-| Part | Managed by | What |
-|---|---|---|
-| The nginx container | **Portainer** Git stack `stacks/skynet/emergency-docs/compose.yaml` | image version (Renovate), port, mounts |
-| What it mounts | **Ansible** `emergency-docs` playbook | `/opt/emergency-docs/nginx/` (config), `/srv/emergency-docs/site/`, the `docs-deploy` user |
-
-The split is because Portainer CE Git stacks can't mount a file from the repo itself.
-**First setup:** run the playbook, *then* create the stack (Portainer → the Authentik LXC's
-environment → Stacks → Add stack → Repository, compose path `stacks/skynet/emergency-docs/compose.yaml`,
-no variables needed, GitOps polling on), then run the playbook again: it checks the login.
-
-```
-private emergency-docs repo ─push─► Docker runner: build site + videos ─► rsync as docs-deploy ─► nginx on 192.168.50.151:8090
-browser ─► https://digital-estate.failsafe.work ─► digital-estate tunnel ─► nginx :8090 ─(logged in?)─► Authentik outpost :9000
-```
-
-- **The tunnel** is its own Cloudflare tunnel, `digital-estate` (the second container in
-  `stacks/shared/cloudflared/compose.yaml`), with one route:
-  `digital-estate.failsafe.work` → `http://192.168.50.151:8090`.
-- **The deploy user** (`docs-deploy`) has no password. Its key, `files/emergency-docs-deploy.pub`,
-  only works from the Docker runner's IP and can only run `rrsync` into the site folder: no shell,
-  no reading anything else, no forwarding.
-- **There is no login-free or LAN-only way in.** Every request goes through Authentik.
-- Settings are in `inventory/host_vars/authentik.yml`. The port and paths there must match the
-  stack's `compose.yaml`.
-- **nginx updates** are normal Renovate PRs on the stack (reviewed, not auto-merged). Portainer
-  redeploys on merge, and the container picks up the same config folder.
-- **Config changes** (the template): run the playbook. It tests the new config inside the running
-  container, then reloads nginx. No redeploy.
-- **Until Authentik is set up** (below), the guide answers HTTP 500 to everyone, and the playbook
-  ends with a WARNING instead of failing.
-
-### Authentik (one-time, in its admin interface)
-
-nginx asks Authentik's **embedded outpost** about every request. Until Authentik has an application
-for the hostname, the outpost answers 404 and nginx returns **500**: the guide stays hidden, and
-the playbook's check warns about it.
-
-1. **Applications → Providers → Create → Proxy Provider**
-   - Name `emergency-docs`
-   - Authorization flow: `default-provider-authorization-implicit-consent` (no "allow access?"
-     screen after logging in)
-   - **Forward auth (single application)**, external host `https://digital-estate.failsafe.work`
-2. **Applications → Applications → Create:** name `Emergency guide`, slug `emergency-docs`,
-   provider `emergency-docs`.
-3. **Who may open it:** that application → **Policy / Group / User Bindings** → bind the two user
-   accounts (mine and the emergency contact's). With no bindings, *every* Authentik user gets in.
-4. **Applications → Outposts → authentik Embedded Outpost → Edit:** add `Emergency guide` to the
-   selected applications. In its configuration, `authentik_host` must be the address browsers use
-   to log in (`https://authentik.failsafe.work`), or the login redirect goes nowhere.
-5. Run the `emergency-docs` playbook again: the WARNING should be gone ("Checked: the guide sends
-   visitors to the Authentik login").
-
-The emergency contact's account must log in with **only** the username and password on the card:
-set that password, and make sure the login flow doesn't make her set up a second factor.
 
 ## Adding a machine
 
