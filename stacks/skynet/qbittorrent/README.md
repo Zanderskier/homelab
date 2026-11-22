@@ -24,6 +24,28 @@ one region can sit on different ASNs. If the logs show `ASN mismatch` after a re
 ASN to the session (Manage Session) instead of making a new one. Redeploy at most once an hour: the
 tracker allows one IP change per hour and answers `429` otherwise.
 
+### Troubleshooting tracker errors
+
+Start with `docker logs --tail 20 seedbox-ip-sync`. Don't redeploy the whole stack first: that
+reconnects the VPN, which means a new exit IP (maybe on another ASN) and uses up the hourly IP change.
+
+| Log says | What to do |
+|---|---|
+| `Completed` or `No change` | The sidecar is fine. Read the tracker message in qBittorrent's **Trackers** tab instead. |
+| `Last change too recent` / `Rate limited` (429) | Nothing. Wait up to an hour; it retries on its own. |
+| `ASN mismatch` | Keep the cookie. In the tracker's Security settings → Manage Session, use "Add additional ASN via IP address" with the IP from the log, then `docker restart seedbox-ip-sync`. |
+| `curl failed` / `Network unreachable` | Usually fixes itself (the sidecar restarts). If not, `docker restart seedbox-ip-sync`; if that says "no such container", redeploy the stack once. |
+| `IP mismatch`, `Incorrect session type`, `Invalid Cookie`, `Invalid session - Other` | The session is bad: make a new cookie (below). |
+| `No Session Cookie` | `SEEDBOX_SESSION_COOKIE` is empty or wrong. Fix it, delete `session.cookies`, redeploy once. |
+
+New cookie: delete the old session on the tracker and create one that is ASN-locked, uses the VPN
+IP from the log, and is allowed to set the dynamic seedbox. Put it in `SEEDBOX_SESSION_COOKIE` in
+Portainer, delete `/mnt/media-storage/arr-stack/qbittorrent/seedbox/session.cookies`, and redeploy
+once.
+
+Once the log shows `Completed`, right-click the affected torrents in qBittorrent → **Force
+reannounce** to clear the tracker error without waiting for the next announce.
+
 ## Deployment (Portainer Git stack)
 
 1. Portainer → Stacks → Add stack → **Repository**, compose path
