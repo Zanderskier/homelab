@@ -14,6 +14,10 @@
 | Docker stack secrets (DB passwords, API tokens, tunnel token) | Portainer stack variables | `${VAR}` in each `compose.yaml` (see each stack's `.env.example`) |
 | Immich DB password and paths | `.env` on the Immich VM only | docker compose on the VM. Ansible only ever changes its `IMMICH_VERSION` line |
 | Admin + break-glass password hashes, break-glass account name | `/ansible_config/secrets.yml` on the Ansible LXC (mode 600) | `users.yml` |
+| Portainer agent secret (`portainer_agent_secret`) | `/ansible_config/secrets.yml` | `portainer.yml`: the server and every agent share it (`AGENT_SECRET`) |
+| PBS API token secret (`pbs_host_backup_secret`, token `host-backup@pbs!skynet`) | `/ansible_config/secrets.yml`, installed as `/etc/host-backup.env` (mode 600) on each Proxmox host | `host-backup.yml` |
+| Cloudflare tunnel token | Portainer stack variable `TUNNEL_TOKEN1` | `stacks/shared/cloudflared` |
+| Gitea read-only token for Portainer Git stacks | Portainer (each stack's repository credentials) | Portainer polling `main` |
 | Ansible SSH private key | `/ansible_config/.ssh/` on the Ansible LXC, never copied anywhere | every playbook |
 | Personal SSH keys | Vaultwarden, served by the Bitwarden desktop app's SSH agent | SSH logins as the admin account |
 | Renovate token, optional GitHub token | Gitea Actions secrets | `renovate.yml` |

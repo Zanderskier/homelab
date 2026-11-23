@@ -38,6 +38,9 @@ that are actually restored.
     rollback**.
 - **No open inbound ports.** Public apps go through one Cloudflare Tunnel (consolidated from 22).
   Admin UIs are tested to reject unauthenticated access; everything else is VPN-only.
+- **No login bypass on the LAN.** Apps with no login of their own sit behind Authentik's proxy, and
+  a Proxmox firewall rule (enforced on the host, outside the container) lets only Authentik reach
+  them. Typing the app's IP on the home network times out.
 - **CI on every change.** Each compose file is validated, `:latest` tags are rejected, playbooks are
   syntax-checked and linted, and committed secrets fail the build.
 - **Secrets stay out of Git.** Portainer variables, a mode-600 file on the Ansible control node,
@@ -205,7 +208,7 @@ What each label means:
 | Audiobookshelf | Arr-Stack | http://192.168.50.199:13378 | Public |
 | Overseerr | Arr-Stack | http://192.168.50.199:5055 | Public |
 | Gitea | gittea-repo | http://192.168.50.124:3000 | Public |
-| Kiwix (offline Wikipedia) | survival | http://192.168.50.131:8080 | Behind Authentik (LAN: direct) |
+| Kiwix (offline Wikipedia) | survival | http://192.168.50.131:8080 (only Authentik may connect) | Behind Authentik, also from the LAN |
 | Authentik (SSO) | Authentik | http://192.168.50.151:9000 | Public |
 | Portainer | Portainer-Lsky | https://192.168.50.81:9443 | Admin |
 | Uptime Kuma | Portainer-Lsky | http://192.168.50.81:3001 | Admin |
@@ -233,6 +236,8 @@ What each label means:
 - [x] Offline knowledge LXC: Kiwix with monthly, checksum-verified, never-deleting updates
 - [x] One timezone (Pacific) on every machine, set by Ansible
 - [x] Kiwix public behind Authentik (proxy outpost, group-restricted)
+- [x] Proxmox firewall on the survival LXC: only Authentik can reach Kiwix, so the LAN can't skip the login
+- [ ] LAN entry point (reverse proxy + split DNS) so logins also work with the internet down
 - [ ] Scheduled restore test from PBS (restore a guest and the host-backup archives, check they start)
 - [ ] Monitoring and alerting (failed jobs, backups, disk health → push notifications)
 - [ ] Gitea, Authentik, Plex, Pi-hole as code in this repo

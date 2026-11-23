@@ -88,6 +88,14 @@ requires a login and membership of that app's group, then forwards to the app on
 with phone or TV clients stay on their own login or OIDC, because those clients can't pass a
 browser login page.
 
+**Guest firewall: no bypass on the LAN.** A proxy login only helps if the app can't be reached
+around it. The Proxmox firewall is on for skynet's guests (Datacenter on, host policy ACCEPT and
+the node firewall off, so the hosts themselves are unfiltered). The survival LXC has its own rules:
+incoming DROP, except Kiwix's port from Authentik (and Homepage's status check), the Portainer
+agent from the Portainer server, SSH and ping. The rules are enforced on the host, on the
+container's virtual network cable, so nothing inside the container can turn them off. Break-glass:
+CT 101 → Firewall → Options → Firewall: No.
+
 ## Backups
 
 | Data | Protection |

@@ -428,9 +428,52 @@ the newest dump from `db-dumps/` into a fresh `gitea-db` with `gunzip -c ... | p
 
 ## Adding a machine
 
-1. Run `bootstrap-ssh.sh self` on it (or `lxcs` on its Proxmox host).
-2. Add it under the right group in `inventory/hosts.yml`.
-3. Add its key to `known_hosts` (`ssh-keyscan -t ed25519 <ip>` on the Ansible LXC).
+1. **Before first boot:** a DHCP reservation on the router for its MAC, so it never gets another
+   address (the old one would end up in leases, `known_hosts` and monitoring). For an LXC, also
+   Options → Start at boot, and add it to its host's PBS backup job.
+2. Run `bootstrap-ssh.sh self` on it (or `lxcs` on its Proxmox host). It prints
+   `ok: <hostname> <ip>`.
+3. Add it under the right group in `inventory/hosts.yml`, with a comment saying what it is
+   (`# CT 111: ...`). Docker hosts also go in `docker_hosts`, and in `portainer_agents` if
+   Portainer should manage them.
+4. Add its key to `known_hosts` (`ssh-keyscan -t ed25519 <ip>` on the Ansible LXC). Compare it with
+   the key on the machine itself (`pct exec <id> -- cat /etc/ssh/ssh_host_ed25519_key.pub`): a scan
+   trusts whatever answers on that IP. Two hosts with the same key means a cloned CT; regenerate
+   its host keys.
+5. Run, each as a dry run first, with `limit` set to the new host: `ping`, `users`,
+   `harden-ssh`, `timezone`, then `docker` (Docker hosts).
+6. For a Portainer agent: run `portainer` with **no limit** (or `portainer,<host>`). A limit
+   filters every play, and the plays that register the environment run on the Portainer server,
+   so `limit: <host>` installs the agent but silently never adds it to Portainer.
+7. If it gets Proxmox firewall rules: add the rules first, check `/etc/pve/firewall/<id>.fw`
+   (no `|` in front of a rule means it's enabled), and only then set Firewall: Yes.
+
+## Offline library (`kiwix-update`)
+
+The survival LXC (CT 101) serves ZIM files (Wikipedia, medicine, repair, preparedness) with
+kiwix-serve (`stacks/skynet/survival`). Which files, and where: `inventory/host_vars/survival.yml`
+(`kiwix_zims`, each with a `folder` on download.kiwix.org). On the 1st of each month at 04:00 a
+systemd timer runs `/usr/local/sbin/kiwix-update`, which for each ZIM:
+
+```
+1. find the newest file on download.kiwix.org      (name_YYYY-MM.zim)
+2. already in current/?                             -> "up to date", next
+3. enough free space?                               (size from the server)
+4. download into incoming/ (resumes), and its .sha256
+5. checksum wrong                                   -> delete the download, FAILED
+6. new file under kiwix_min_size_percent (95%) of the old one -> HOLD (upstream may have
+   removed content; the download stays in incoming/ for a look, current/ is untouched)
+7. old version -> archive/, new one -> current/, restart Kiwix
+```
+
+**Nothing is ever deleted** from `current/` or `archive/`, so content removed upstream stays here.
+Prune `archive/` by hand when the disk needs it. The log ends with `RESULT: OK` or
+`RESULT: FAILED or HELD`: `journalctl -u kiwix-update`. Run one now: the playbook with
+`kiwix_update_run_now=true` (it starts in the background; follow it with
+`sudo journalctl -fu kiwix-update`).
+
+The files live on skynet's `/mnt/nvme0/survival` (bind mount `/srv/survival`), so the guest
+backup doesn't include them. host-backup does (`nvme0` archive).
 
 ## Maintenance
 
