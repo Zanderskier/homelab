@@ -26,11 +26,12 @@ services:
       - --certificatesresolvers.le.acme.storage=/certs/acme.json
       - --certificatesresolvers.le.acme.dnschallenge.provider=cloudflare
       - --certificatesresolvers.le.acme.dnschallenge.resolvers=1.1.1.1:53
-      # FIRST RUN ONLY: Let's Encrypt's test server (generous limits). Delete this line once it works.
-      - --certificatesresolvers.le.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory
       # Routes come from the file below
       - --providers.file.filename=/etc/traefik/routes.yml
       - --log.level=INFO
+      - --global.checknewversion=false                                # Renovate handles updates
+      - --entrypoints.web.http.aliasheadersstrategy=delete
+      - --entrypoints.websecure.http.aliasheadersstrategy=delete       # drop look-alike headers (X_Auth_User)
     volumes:
       - /srv/lan-proxy/certs:/certs              # the certificate lives here (in the CT disk, so PBS backs it up)
     configs:
