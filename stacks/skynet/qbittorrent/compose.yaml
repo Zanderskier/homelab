@@ -40,34 +40,51 @@ services:
       entrypoint: ["/bin/sh", "-c"]
       command:
           - |
-            log() { echo "$$(date '+%Y-%m-%d %H:%M:%S') $$*"; }
+            # Logs go to stderr so they never mix into captured curl output.
+            log() { echo "$$(date '+%Y-%m-%d %H:%M:%S') $$*" >&2; }
             JAR=/data/session.cookies
 
-            if [ -z "$$SESSION_COOKIE" ] && [ ! -s "$$JAR" ]; then
+            # Accept the bare token as well as mam_id=<token>. Without an "=", curl -b treats the
+            # value as a file name, sends no cookie, and the tracker answers "No Session Cookie".
+            COOKIE=$$(printf '%s' "$$SESSION_COOKIE" | tr -d ' \r\n"')
+            case "$$COOKIE" in
+              ""|*=*) ;;
+              *) COOKIE="mam_id=$$COOKIE" ;;
+            esac
+
+            # A saved jar only counts if it actually holds a mam_id cookie.
+            has_saved() { [ -s "$$JAR" ] && grep -q 'mam_id' "$$JAR"; }
+
+            if [ -z "$$COOKIE" ] && ! has_saved; then
               log "ERROR: SEEDBOX_SESSION_COOKIE is not set and no saved cookie exists in $$JAR"
               exit 1
             fi
 
-            # The tracker rotates the session after first use; the rotated cookie is saved in $$JAR.
-            update() {
-              if [ "$$1" = "env" ] || [ ! -s "$$JAR" ]; then
-                log "Using the session cookie from the environment"
-                curl -sS -m 30 -c "$$JAR" -b "$$SESSION_COOKIE" "$$SYNC_URL"
-              else
-                curl -sS -m 30 -c "$$JAR" -b "$$JAR" "$$SYNC_URL"
-              fi
+            # curl -c saves any cookie the tracker sends back in $$JAR (as the tracker's own example
+            # does), and later calls reuse it. call env|saved sets BODY, CODE and MSG and returns
+            # curl's exit code.
+            call() {
+              if [ "$$1" = "env" ]; then b="$$COOKIE"; else b="$$JAR"; fi
+              out=$$(curl -sS -m 30 -c "$$JAR" -b "$$b" -w '\n%{http_code}' "$$SYNC_URL") || return $$?
+              CODE=$$(printf '%s\n' "$$out" | tail -n 1)
+              BODY=$$(printf '%s\n' "$$out" | sed '$$d')
+              MSG=$$(printf '%s' "$$BODY" | sed -n 's/.*"msg": *"\([^"]*\)".*/\1/p')
+              [ -n "$$MSG" ] || MSG="no JSON msg (HTTP $$CODE): $$(printf '%s' "$$BODY" | head -c 200)"
             }
+            ok() { printf '%s' "$$BODY" | grep -q '"Success": *true'; }
 
             log "Waiting 30s for VPN to come up..."
             sleep 30
             fails=0
             while true; do
-              log "VPN IP: $$(curl -s -m 15 https://ifconfig.me || echo unknown)"
-              resp=$$(update) ; rc=$$?
-              if [ $$rc -eq 0 ] && echo "$$resp" | grep -qiE 'No Session Cookie|Invalid session'; then
-                log "Saved cookie rejected ($$resp); retrying with the cookie from the environment"
+              if [ -n "$$COOKIE" ] && ! has_saved; then src=env; else src=saved; fi
+              call "$$src"; rc=$$?
+              # Any rejection of the saved cookie except the hourly rate limit: fall back to the variable.
+              if [ $$rc -eq 0 ] && [ "$$src" = saved ] && ! ok && [ "$$CODE" != 429 ] && [ -n "$$COOKIE" ]; then
+                log "Saved cookie rejected ($$MSG); retrying with SEEDBOX_SESSION_COOKIE"
                 rm -f "$$JAR"
-                resp=$$(update env) ; rc=$$?
+                src=env
+                call env; rc=$$?
               fi
               if [ $$rc -ne 0 ]; then
                 fails=$$((fails + 1))
@@ -80,6 +97,20 @@ services:
                 continue
               fi
               fails=0
-              log "Tracker response: $$resp"
+              if ok; then
+                log "OK ($$src cookie): $$BODY"
+              elif [ "$$CODE" = 429 ]; then
+                log "Rate limited (one IP change per hour, account-wide); will retry: $$BODY"
+              else
+                case "$$MSG" in
+                  *"No Session Cookie"*) hint="SEEDBOX_SESSION_COOKIE is empty or not a valid mam_id value" ;;
+                  *"ASN mismatch"*) hint="the VPN moved to a new ASN: in the tracker's Manage Session, add an ASN via the IP above" ;;
+                  *"IP mismatch"*) hint="the session is IP-locked: recreate it as ASN-locked" ;;
+                  *"Incorrect session type"*) hint="recreate the session with 'Allow session to set dynamic seedbox' = Yes" ;;
+                  *) hint="create a new ASN-locked session for the IP above and update SEEDBOX_SESSION_COOKIE" ;;
+                esac
+                log "ERROR ($$src cookie, HTTP $$CODE): $$BODY"
+                log "Fix: $$hint"
+              fi
               sleep "$$INTERVAL"
             done
