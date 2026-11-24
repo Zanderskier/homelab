@@ -2,10 +2,11 @@
 # {{ ansible_managed }}
 # Edit ansible/templates/host-backup/host-backup.sh.j2 in the repo, not this file.
 #
-# Nightly backup of host folders that Proxmox's own backups skip (container bind mounts):
-#   1. check each folder is a mounted drive (fstab has nofail, so a dead drive leaves an empty folder)
+# Nightly backup of what Proxmox's own backups skip: container bind mounts on the data drives, and
+# the host's own config (/etc, /etc/pve, /root, root's crontab):
+#   1. check each drive folder is a mounted drive (fstab has nofail, so a dead drive leaves an empty folder)
 #   2. dump each listed database to a file, so there's a consistent copy to restore from
-#   3. send the folders to Proxmox Backup Server ({{ pbs_server }}, datastore {{ pbs_datastore }},
+#   3. send the drive folders and the host config to Proxmox Backup Server ({{ pbs_server }}, datastore {{ pbs_datastore }},
 #      namespace {{ pbs_namespace }}, backup host/{{ host_backup_id }})
 # Logs: journalctl -u host-backup.service     Run now: systemctl start host-backup.service
 set -uo pipefail
@@ -22,8 +23,10 @@ fi
 echo "ok  {{ p.path }} ($(findmnt -no SOURCE {{ p.path }}))"
 {% endfor %}
 
+# Host config (/etc, /root, ...) lives on the boot disk, not on a separate drive, so there's no
+# mount check: if the boot disk is gone, so is this script.
 {% for p in host_backup_config_paths | default([]) %}
-# TODO: one echo line, like the "ok" line above, but there's no mountpoint check (say why in a comment)
+echo "ok  {{ p.path }} (host config)"
 {% endfor %}
 
 echo "== 2. Database dumps"
@@ -63,6 +66,9 @@ else
 fi
 if proxmox-backup-client backup \
 {% for p in host_backup_paths %}
+    {{ p.name }}.pxar:{{ p.path }} \
+{% endfor %}
+{% for p in host_backup_config_paths | default([]) %}
     {{ p.name }}.pxar:{{ p.path }} \
 {% endfor %}
 {% for p in host_backup_paths %}

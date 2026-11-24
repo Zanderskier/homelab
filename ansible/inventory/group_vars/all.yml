@@ -24,15 +24,17 @@ host_backup_full_read_day: 7
 
 # Host config, backed up by host-backup along with the drives. These aren't drives, so there's no
 # mount check. Archive names must be unique and different from the drive names in host_vars.
+# Contains secrets (/etc/pve/priv, /etc/host-backup.env, /root/.smbcredentials): any off-site copy
+# of these archives must be encrypted.
 host_backup_config_paths:
-  - name: survival      # /etc
-    path: /etc <unknown>
-  - name: plex          # /etc/pve is a separate filesystem (pmxcfs); the /etc archive stops at it
-    path: TODO <unknown>
-  - name: gitea
-    path: /root <unknown>
-  - name: authentik     # root's crontab (on little-skynet it runs rsync-data.sh)
-    path: TODO <unknown>
+  - name: etc           # archive etc.pxar: fstab, smb.conf, network, logrotate, apt sources...
+    path: /etc
+  - name: pve           # /etc/pve is a separate filesystem (pmxcfs); the /etc archive stops at it.
+    path: /etc/pve      # Every guest's config, storage.cfg, backup jobs, users.
+  - name: root          # scripts kept in /root (e.g. rsync-data.sh on little-skynet)
+    path: /root
+  - name: crontabs      # root's crontab (on little-skynet it runs rsync-data.sh)
+    path: /var/spool/cron/crontabs
 
 # Every machine's timezone (playbooks/timezone.yml). Local schedules (the host-backup timer,
 # Proxmox backup jobs, cron) run in this time on every host.

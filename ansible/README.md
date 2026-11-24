@@ -426,6 +426,16 @@ but whose size and mtime didn't (rare, e.g. a tool that restores the old mtime).
 (`host_backup_full_read_day` in `group_vars/all.yml`, Sunday) every file is read again
 (`--change-detection-mode=data`). Each run's log says which mode it used.
 
+**Host config too.** Both hosts also send their own config, listed once in
+`host_backup_config_paths` (`group_vars/all.yml`): `etc`, `pve`, `root` and `crontabs` archives
+(`/etc`, `/etc/pve`, `/root`, `/var/spool/cron/crontabs`). That's fstab, Samba, the network, every
+guest's config, storage and backup jobs, and hand-made scripts such as `rsync-data.sh`. `/etc/pve`
+is its own archive because it's a separate filesystem (Proxmox's pmxcfs) mounted on `/etc`, and the
+client never crosses into another filesystem: the `etc` archive alone would silently leave it out.
+These archives hold secrets (`/etc/pve/priv`, the PBS token, SMB credentials), so an off-site copy
+must be encrypted. To get one file back, e.g. a guest's config: PBS UI → `host/<host>` → a
+snapshot → `pve.mpxar` → `lxc/107.conf` → Download.
+
 These backups are stored as two archives per folder, `<name>.mpxar` (file list) and
 `<name>.ppxar` (contents). Snapshots from before the change are a single `<name>.pxar`.
 
