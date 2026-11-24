@@ -133,8 +133,8 @@ stacks/little-skynet/immich/       deployed by Ansible, not Portainer
 ansible/                           inventory, playbooks, bootstrap scripts (see ansible/README.md)
   playbooks/  ping · patch-guests · patch-hosts · users · harden-ssh · timezone · docker ·
               immich · portainer · portainer-discover · docker-cleanup · host-backup ·
-              kiwix-update
-  templates/  scripts and systemd units the playbooks install (host-backup, kiwix-update)
+              kiwix-update · runner-prune
+  templates/  scripts and systemd units the playbooks install (host-backup, kiwix-update, runner-prune)
 .gitea/workflows/
   lint.yml        compose validation, pin check, secret scan, ansible syntax + lint
   renovate.yml    Renovate every 4 hours

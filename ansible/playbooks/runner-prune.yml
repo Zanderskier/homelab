@@ -1,0 +1,55 @@
+---
+# Installs a daily cleanup of the CI runner's inner Docker.
+#
+# The Gitea runner is Docker-in-Docker: job images live in a Docker daemon inside the runner
+# container, where docker-cleanup's normal prune can't see them. Renovate's image is about 1 GB and
+# Renovate bumps its own pin, so every new version leaves the old one behind. Unchecked, that filled
+# CT 109's disk to 99% (29 GB of old Renovate images, 2026-11-24).
+#   runner-prune.service + .timer    run `docker image prune -a -f` inside the runner daily
+# Settings: docker_inner_daemon and runner_prune_time in inventory/host_vars/<host>.yml.
+# Hosts without docker_inner_daemon are skipped.
+#
+# Check mode shows each file change and turns nothing on.
+- name: Daily cleanup of the CI runner's inner Docker
+  hosts: guests
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Skip hosts without an inner Docker
+      ansible.builtin.meta: end_host
+      when: docker_inner_daemon is not defined
+
+    - name: Install the systemd service and timer
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/runner-prune/{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: [runner-prune.service, runner-prune.timer]
+
+    # In check mode the unit files above aren't really written, so systemd couldn't find the timer.
+    - name: Turn on the daily timer
+      ansible.builtin.systemd_service:
+        name: runner-prune.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: not ansible_check_mode
+
+    - name: Explain what check mode left out
+      ansible.builtin.debug:
+        msg: A real run turns on runner-prune.timer here (daily at {{ runner_prune_time }}).
+      when: ansible_check_mode
+
+    - name: When it runs next
+      # The systemd module can start units but not list timers.
+      ansible.builtin.command: systemctl list-timers runner-prune.timer --no-pager  # noqa: command-instead-of-module
+      register: next_run
+      changed_when: false
+      check_mode: false
+      failed_when: false
+
+    - name: Schedule
+      ansible.builtin.debug:
+        msg: "{{ next_run.stdout_lines }}"

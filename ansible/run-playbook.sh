@@ -25,6 +25,7 @@ case "$PLAYBOOK" in
   immich)             WHAT="Deploys Immich at the version in host_vars/immich.yml (DB dump first). Runs by itself when an Immich update is merged." ;;
   portainer)          WHAT="Portainer server + agents at the version in group_vars/portainer_hosts.yml (data backup first). Runs by itself when a Portainer update is merged." ;;
   docker-cleanup)     WHAT="Removes unused Docker images and orphaned Portainer stack records." ;;
+  runner-prune)       WHAT="Installs/updates the daily cleanup of the CI runner's inner Docker images (Renovate leaves ~1 GB per version)." ;;
   docker)             WHAT="Installs Docker CE from Docker's own repository on the docker_hosts group. Safe to run again." ;;
   kiwix-update)       WHAT="Installs/updates the monthly Kiwix ZIM update on survival. extra_vars kiwix_update_run_now=true also starts one now (in the background)." ;;
   host-backup)        WHAT="Installs/updates the nightly backup of host folders (e.g. /mnt/nvme1) to PBS. extra_vars host_backup_run_now=true also runs one now." ;;

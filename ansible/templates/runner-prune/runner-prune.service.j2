@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Remove unused images from the CI runner's inner Docker ({{ docker_inner_daemon }})
+# The inner Docker lives in a container, so the host's Docker must be up.
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec {{ docker_inner_daemon }} docker image prune -a -f
+Nice=10
+IOSchedulingClass=idle

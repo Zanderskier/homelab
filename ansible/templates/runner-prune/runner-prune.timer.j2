@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Daily cleanup of the CI runner's inner Docker images
+
+[Timer]
+OnCalendar=*-*-* {{ runner_prune_time }}:00
+# If the host was off at that time, run once when it's back.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

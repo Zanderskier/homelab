@@ -3,3 +3,6 @@
 # in an inner Docker daemon inside this container, not in the host's Docker.
 # docker-cleanup.yml prunes that inner daemon too when this is set.
 docker_inner_daemon: gitea-runner-1   # container_name in stacks/skynet/gitea-runner/compose.yaml
+# runner-prune.yml installs a daily timer that runs that prune on its own. HH:MM, local time.
+# Any time is safe: an image that a running job uses is never removed.
+runner_prune_time: "05:00"

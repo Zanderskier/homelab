@@ -29,6 +29,7 @@ ansible/
     portainer.yml          Portainer server + standard agents, one pinned version, environments via API
     host-backup.yml        nightly PBS backup of host folders that Proxmox backups skip (bind mounts)
     docker-cleanup.yml     unused images, orphaned Portainer stack records. Safe any time
+    runner-prune.yml       daily timer that prunes the CI runner's inner Docker (job images)
     docker.yml             Docker CE from Docker's own repository on the docker_hosts group
     timezone.yml           same timezone (group_vars/all.yml) on every machine
     kiwix-update.yml       monthly update of the offline Wikipedia/ZIM files on survival (never deletes)
@@ -68,6 +69,7 @@ Usually none: the schedule and the two deploy workflows cover normal operation.
 | `docker-cleanup` | disks are filling up, or Portainer shows stacks for hosts that are gone | Yes, removes only unused things |
 | `immich`, `portainer` | a deploy failed and you've fixed the cause, or you edited a template | Yes |
 | `host-backup` | you changed what's backed up, or the PBS token | Yes (files + timer only) |
+| `runner-prune` | a new runner, or you changed `runner_prune_time` | Yes (timer only) |
 | `users`, `harden-ssh` | a new machine, or a password change | Yes |
 | `timezone` | a new machine, or a schedule runs at the wrong hour | Yes (timezone only) |
 | `kiwix-update` | you changed the ZIM list in `host_vars/survival.yml`, or want an update now (`kiwix_update_run_now=true`) | Yes (script + timer; the download runs on survival) |
@@ -375,6 +377,20 @@ belongs to a compose project with that name. Remove orphans with this playbook, 
 
 Check mode lists what would be removed. Delete `/opt/portainer/retired-stacks` when you no longer
 need the old files.
+
+### The CI runner's job images (`runner-prune`)
+
+The Gitea runner (CT 109) is Docker-in-Docker: job images live in a Docker daemon *inside* the
+`gitea-runner-1` container (volume `runner-docker`), where a normal `docker image prune` can't see
+them. Renovate's image is about 1 GB and Renovate bumps its own pin, so each new version leaves the
+old one behind. In November 2026 that filled CT 109's disk to 99% (29 GB of old Renovate images).
+
+- `runner-prune` installs a timer on every host with `docker_inner_daemon` in its host_vars. It runs
+  `docker exec <container> docker image prune -a -f` daily at `runner_prune_time` (`host_vars/gitea-runner.yml`).
+- `docker-cleanup` also prunes the inner daemon, for a one-off cleanup.
+- Check it on CT 109: `systemctl list-timers runner-prune.timer` and `journalctl -u runner-prune.service`.
+- Pruning frees space inside the container's disk, but the LVM-thin pool on skynet only gets the blocks
+  back after `pct fstrim 109` on skynet.
 
 ## Host folder backups (`host-backup`)
 
