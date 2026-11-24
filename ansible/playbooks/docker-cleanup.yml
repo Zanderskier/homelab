@@ -52,13 +52,22 @@
           ansible.builtin.debug:
             msg: "{{ prune.stdout_lines | select('match', '^Total reclaimed space') | list }}"
           when: not ansible_check_mode
-          
-    # This prunes the inner docker dameon as that is where the main docker images get stored
-     - name: Also clean the CI runner's inner Docker (job images live there)
-       ansible.builtin.command: docker exec {{ TODO_container_name }} docker image prune -a -f
-       register: prune_inner
-       changed_when: TODO   # same idea as the task above
-       when: TODO           # only on the runner host. Hint: a variable in host_vars is cleaner than a hostname check
+
+        # The CI runner is Docker-in-Docker: job images (Renovate, ~1 GB per version) live in the
+        # inner daemon, which the prune above can't see. Only hosts that set docker_inner_daemon
+        # in host_vars run this.
+        - name: Also clean the CI runner's inner Docker (job images live there)
+          ansible.builtin.command: docker exec {{ docker_inner_daemon }} docker image prune -a -f
+          register: prune_inner
+          changed_when: "'Total reclaimed space: 0B' not in prune_inner.stdout"
+          when: docker_inner_daemon is defined
+
+        - name: Result (inner Docker)
+          ansible.builtin.debug:
+            msg: "{{ prune_inner.stdout_lines | select('match', '^Total reclaimed space') | list }}"
+          when:
+            - docker_inner_daemon is defined
+            - not ansible_check_mode
 
 - name: Remove orphaned stack records from Portainer
   hosts: portainer_server
