@@ -22,6 +22,10 @@ fi
 echo "ok  {{ p.path }} ($(findmnt -no SOURCE {{ p.path }}))"
 {% endfor %}
 
+{% for p in host_backup_config_paths | default([]) %}
+# TODO: one echo line, like the "ok" line above, but there's no mountpoint check (say why in a comment)
+{% endfor %}
+
 echo "== 2. Database dumps"
 {% if not (host_backup_db_dumps | default([])) %}
 echo "none listed for this host"
