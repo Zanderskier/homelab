@@ -1,6 +1,8 @@
 x-common-env: &common-env
   PUID: ${PUID:-1000}
-  PGID: ${PGID:-1000}
+  PGID: ${PGID:-1001}   # smbshare: the group every app and the SMB share write as
+  # New files group-writable (664/775), so the other apps and the SMB share can change them.
+  UMASK: "002"
   TZ: ${TZ:-America/Los_Angeles}
 
 services:
@@ -65,7 +67,6 @@ services:
     container_name: radarr
     environment:
       <<: *common-env
-      UMASK: "022"
     volumes:
       - /mnt/media-storage/arr-stack/radarr/config:/config
       - /mnt/media-storage/downloads:/data

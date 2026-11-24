@@ -2,6 +2,9 @@ services:
   audiobookshelf:
     image: ghcr.io/advplyr/audiobookshelf:2.38.0
     container_name: audiobookshelf
+    # alex:smbshare, like every other writer on /mnt/media. Without it, it runs as root and its
+    # files can't be changed from the SMB share. Its folders must be owned 1000:1001 first.
+    user: "1000:1001"
     ports:
       - "13378:80"
     volumes:
