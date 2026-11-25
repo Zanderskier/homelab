@@ -28,6 +28,15 @@
         name: [rsync, sqlite3]
         state: present
 
+    - name: Install the settings file (root only, holds the Kuma push URL)
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/rsync-data/rsync-data.env.j2"
+        dest: TODO <not sure>
+        owner: root
+        group: root
+        mode: TODO <not sure>
+      no_log: TODO <not sure>
+
     - name: Install the script
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../templates/rsync-data/rsync-data.sh.j2"
