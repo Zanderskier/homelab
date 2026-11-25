@@ -85,7 +85,7 @@ didn't happen. Then run `dkms autoinstall -k <kernel>` and read the error (usual
 install is invisible to apt, so the container's apt upgraded freely.
 **Fix:** hold the container side, upgrade both together.
 **Still missing:** monitoring. A check that `nvidia-smi` works in CT 103 would have caught this
-on day one.
+on day one. Planned as a Kuma push monitor ([monitoring.md](monitoring.md#gaps)).
 
 ## little-skynet: Quadro P620, unused
 
