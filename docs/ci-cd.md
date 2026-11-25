@@ -98,3 +98,38 @@ Turn this on **after** the first lint run passes. Otherwise PRs can't merge at a
 
 Actions tab → **renovate** → **Run workflow**. Within a few minutes you should see a
 **Dependency Dashboard** issue and the first update PRs.
+
+## Making a change (branch → PR → merge)
+
+Every change goes through a pull request, so CI checks it before it reaches `main` (Portainer and
+the Ansible workflows deploy from `main`).
+
+```bash
+git switch main && git pull                 # start from the latest main
+git switch -c feat/<short-name>             # fix/..., docs/... work too
+# edit, then:
+git branch --show-current                   # check: not main
+git add -A && git commit -m "..." && git push -u origin feat/<short-name>
+```
+
+Open the PR from the link `git push` prints, wait for CI to go green, merge. Gitea deletes the
+branch on merge. Then locally:
+
+```bash
+git switch main && git pull && git branch -d feat/<short-name>
+```
+
+**Housekeeping.** This repo has `fetch.prune = true`, so a fetch drops references to branches
+deleted on Gitea. `git branch -vv` marks a local branch whose remote is gone with `[gone]`: it was
+merged, and `git branch -d <name>` removes it (`-d` refuses if the branch has unmerged work, so it
+can't lose anything). Don't leave stashes around: commit unfinished work to a branch instead.
+
+**If work lands on `main` by mistake** (committed and pushed before branching):
+
+1. Put a branch at that commit, then revert it on `main`, so `main` is clean again:
+   `git branch feat/<name> <commit>`, then on `main`: `git revert <commit>` and push.
+2. **Rebuild the branch on top of the revert.** Otherwise merging it later does nothing: Git sees
+   the commit as already in `main` (where it was reverted), so the changes stay reverted.
+   On the branch: `git reset --hard origin/main`, `git cherry-pick <commit>`, then
+   `git push --force-with-lease origin feat/<name>`.
+3. Continue on the branch and merge it through a PR as usual.
