@@ -241,6 +241,7 @@ What each label means:
 - [ ] LAN entry point (reverse proxy + split DNS) so logins also work with the internet down
 - [ ] Scheduled restore test from PBS (restore a guest and the host-backup archives, check they start)
 - [ ] Monitoring and alerting (failed jobs, backups, disk health → push notifications)
+- [ ] Dedicated monitoring node on separate hardware (out-of-band monitoring): uptime, health checks and alerting that still work when a whole host is down
 - [ ] Gitea, Authentik, Plex, Pi-hole as code in this repo
 - [ ] Managed switch + VLANs (management / servers / trusted / IoT / guest)
 - [ ] Offsite backups and a UPS
