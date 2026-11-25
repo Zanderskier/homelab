@@ -170,6 +170,9 @@ UUIDs and serials, never `/dev/nvmeXn1`.
 - **Unused mounts removed:** skynet's `/mnt/remote-share` (an SMB mount with `file_mode=0777`) and
   stray folders (`/mnt/media-storage` on the host).
 - **The CI runner's job images are pruned daily** (`runner-prune`), so CT 109 doesn't fill up.
+- **Plex's GPU libraries are held at the host driver's version**, after an upgrade got them out of
+  sync and Plex silently fell back to the CPU. **little-skynet's unused NVIDIA driver is fully
+  removed.** Details, checks and the upgrade procedure: [gpu.md](gpu.md).
 
 ## Still open
 

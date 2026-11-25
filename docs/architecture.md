@@ -129,9 +129,12 @@ commands: [hardening.md](hardening.md#drives-and-boot).
 
 **GPUs.** skynet's Quadro P2200 is passed through to Plex (CT 103) for hardware transcoding. The
 host driver is built by DKMS for every installed kernel. The NVIDIA libraries inside CT 103 must be
-the exact same version as the host driver, or Plex silently falls back to the CPU. `patch-hosts`
+the exact same version as the host driver, or Plex silently falls back to the CPU. The host driver
+comes from NVIDIA's `.run` installer, so apt never upgrades it. CT 103's libraries come from
+NVIDIA's apt repo, so they're held (`apt-mark hold`) at the host's version. Upgrading the driver
+means upgrading both together, on purpose. `patch-hosts`
 warns before a reboot if DKMS didn't build the module for the new kernel. little-skynet's Quadro
-P620 is unused, and its driver is removed.
+P620 is unused, and its driver is removed. Details: [gpu.md](gpu.md).
 
 ## Backups
 

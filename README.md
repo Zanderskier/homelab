@@ -99,7 +99,7 @@ upstream release ─► Renovate PR ─► CI (compose valid, pinned, no secrets
 ```
 
 More detail: **[docs/architecture.md](docs/architecture.md)** (design and decisions) ·
-[docs/hardening.md](docs/hardening.md) (permissions, drives, boot) · [docs/ci-cd.md](docs/ci-cd.md) · [ansible/README.md](ansible/README.md) ·
+[docs/hardening.md](docs/hardening.md) (permissions, drives, boot) · [docs/gpu.md](docs/gpu.md) · [docs/ci-cd.md](docs/ci-cd.md) · [ansible/README.md](ansible/README.md) ·
 [docs/secrets.md](docs/secrets.md)
 
 ## Tech
@@ -142,7 +142,7 @@ ansible/                           inventory, playbooks, bootstrap scripts (see 
   deploy-immich.yml, deploy-portainer.yml   deploy on merge
 .gitea/actions/setup-ansible/   shared: pinned Ansible on the control node
 renovate.json     update policy: what auto-merges, what waits for review, what's locked
-docs/             architecture, hardening, CI/CD, secrets
+docs/             architecture, hardening, GPUs, CI/CD, secrets, disaster recovery
 ```
 
 ## Operations reference
