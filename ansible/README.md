@@ -476,6 +476,11 @@ vaultwarden_backup: sqlite3 .backup of the live database + integrity check, then
 - **Destinations must be real mounts.** `/mnt/data-backup` is an automount (`x-systemd.automount`),
   and the automount placeholder counts as a mount point even when the Pi is off. The script looks
   for the real filesystem behind it, so a missing Pi is an `ERROR`, not a copy onto the boot disk.
+- **Alerts:** each real run reports to an Uptime Kuma push monitor (`rsync-data (little-skynet)`,
+  heartbeat 25 h), which notifies the phone through ntfy. `FAILED` alerts at once; a night with
+  no run at all alerts when the heartbeat runs out. The push URL is `rsync_data_push_url` in
+  `/ansible_config/secrets.yml` (without the `?query`), installed as `/etc/rsync-data.env` (0600).
+  If Kuma can't be reached, the run logs a warning and its own result is unchanged.
 - **Restore from the USB copy first.** The Pi's SMB share stores no Linux owners or symlinks.
 - **History:** this was the hand-made `/root/rsync-data.sh` with a cron line. The playbook removed
   the cron line and renamed the script to `/root/rsync-data.sh.retired`.
