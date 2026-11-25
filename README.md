@@ -237,6 +237,7 @@ What each label means:
 - [x] One timezone (Pacific) on every machine, set by Ansible
 - [x] Kiwix public behind Authentik (proxy outpost, group-restricted)
 - [x] Proxmox firewall on the survival LXC: only Authentik can reach Kiwix, so the LAN can't skip the login
+- [ ] Upgrade Proxmox Backup Server 3.4 → 4 (Debian 13), to match PVE 9 on both hosts (soon)
 - [ ] LAN entry point (reverse proxy + split DNS) so logins also work with the internet down
 - [ ] Scheduled restore test from PBS (restore a guest and the host-backup archives, check they start)
 - [ ] Monitoring and alerting (failed jobs, backups, disk health → push notifications)
