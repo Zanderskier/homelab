@@ -414,6 +414,11 @@ Every night at 02:30 (before the 03:30 Proxmox backups), skynet runs:
 - **Least privilege:** the API token `host-backup@pbs!skynet` has `DatastoreBackup` on the `hosts`
   namespace only: it can add backups there, and can't see, change or delete the container backups.
 - **Retention:** a PBS prune job on the `hosts` namespace (7 daily, 4 weekly, 6 monthly).
+- **Alerts:** every run reports to an Uptime Kuma push monitor per host (`host-backup (skynet)`,
+  `host-backup (little-skynet)`, heartbeat 25 h), which notifies the phone through ntfy. A failure,
+  including a missing drive, alerts at once; a night with no run alerts when the heartbeat runs
+  out. URLs: `host_backup_push_urls` (one per host, without the `?query`) in
+  `/ansible_config/secrets.yml`, installed in `/etc/host-backup.env`.
 - **Logs:** `journalctl -u host-backup.service` on skynet. Run one now:
   `systemctl start host-backup.service`.
 - **little-skynet** does the same at 02:45 for `/mnt/second-drive` (Immich's photos), as
