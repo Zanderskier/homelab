@@ -16,9 +16,6 @@
 
 set -uo pipefail          # no -e: one failed copy must not skip the others
 
-# Kuma push URL (optional: without it, nothing is reported)
-[ -f /etc/rsync-data.env ] && . /etc/rsync-data.env
-
 KEEP_DAYS={{ rsync_data_keep_days }}
 TODAY=$(date +%F)
 DESTS=({% for d in rsync_data_dests %}{{ d }}{{ ' ' if not loop.last else '' }}{% endfor %})
@@ -28,14 +25,6 @@ DESTS=({% for d in rsync_data_dests %}{{ d }}{{ ' ' if not loop.last else '' }}{
 FAILS=0
 log()  { echo "$*"; }                       # stdout goes to the journal
 fail() { log "ERROR: $*"; FAILS=$((FAILS + 1)); }
-
-# Tell Uptime Kuma how the run went. Must never change the backup's own result.
-push() {   # <up|down> <message, %20 for spaces>
-    [ -n "${PUSH_URL:-}" ] || return 0
-    # TODO: skip in a dry run (why? what would Kuma think if a dry run said "up"?)
-    curl -d "$PUSH_URL?status=$1&msg=$2" \
-        || log "warning: could not reach Uptime Kuma (the copy itself is unaffected)"
-}
 
 # Only one copy of this script at a time (Immich can take a while)
 exec 9>/run/rsync-data.lock
@@ -120,14 +109,5 @@ if [ "$FAILS" -eq 0 ]; then
     log "RESULT: OK"
 else
     log "RESULT: FAILED ($FAILS problems)"
-    exit 1
-fi
-
-if [ "$FAILS" -eq 0 ]; then
-    log "RESULT: OK"
-    # TODO <not sure>
-else
-    log "RESULT: FAILED ($FAILS problems)"
-    # TODO   <not sure> <- before the exit
     exit 1
 fi
