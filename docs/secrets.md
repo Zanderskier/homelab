@@ -18,6 +18,8 @@
 | PBS API token secret (`pbs_host_backup_secret`, token `host-backup@pbs!skynet`) | `/ansible_config/secrets.yml`, installed as `/etc/host-backup.env` (mode 600) on each Proxmox host | `host-backup.yml` |
 | Cloudflare tunnel token | Portainer stack variable `TUNNEL_TOKEN1` | `stacks/shared/cloudflared` |
 | Gitea read-only token for Portainer Git stacks | Portainer (each stack's repository credentials) | Portainer polling `main` |
+| Uptime Kuma push URLs (`rsync_data_push_url`, `host_backup_push_urls`) | `/ansible_config/secrets.yml`, installed as `/etc/rsync-data.env` / `/etc/host-backup.env` (mode 600) | `rsync-data.yml`, `host-backup.yml`: each run reports to its push monitor. See [monitoring.md](monitoring.md) |
+| ntfy topic | Vaultwarden, Kuma's ntfy notification, the `topic` secret of each PVE/PBS webhook target | Every phone alert |
 | Ansible SSH private key | `/ansible_config/.ssh/` on the Ansible LXC, never copied anywhere | every playbook |
 | Personal SSH keys | Vaultwarden, served by the Bitwarden desktop app's SSH agent | SSH logins as the admin account |
 | Renovate token, optional GitHub token | Gitea Actions secrets | `renovate.yml` |

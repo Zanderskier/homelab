@@ -1,7 +1,7 @@
 # Architecture and design decisions
 
 How the homelab is put together, and why. The operational how-tos live next to the code:
-[hardening.md](hardening.md), [ci-cd.md](ci-cd.md), [secrets.md](secrets.md), [ansible/README.md](../ansible/README.md).
+[hardening.md](hardening.md), [monitoring.md](monitoring.md), [ci-cd.md](ci-cd.md), [secrets.md](secrets.md), [ansible/README.md](../ansible/README.md).
 
 ## Hosts
 
@@ -170,5 +170,6 @@ Details: [secrets.md](secrets.md).
   CT 100 and 102). Converting them to unprivileged is planned. See
   [hardening.md](hardening.md#still-open).
 - No offsite backup or UPS yet.
-- Monitoring is uptime-only (Uptime Kuma). Alerts for failed patch runs, backups and disk health are
-  next.
+- Alerts reach the phone through ntfy: failed or missing backup runs (Kuma push monitors), failed
+  Proxmox/PBS jobs (webhooks), and apps or hosts going down. Kuma itself runs on little-skynet, and
+  disk health, disk space and patch runs aren't watched yet. See [monitoring.md](monitoring.md).

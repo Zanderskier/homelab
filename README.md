@@ -41,6 +41,10 @@ that are actually restored.
 - **No login bypass on the LAN.** Apps with no login of their own sit behind Authentik's proxy, and
   a Proxmox firewall rule (enforced on the host, outside the container) lets only Authentik reach
   them. Typing the app's IP on the home network times out.
+- **Alerts that catch silence, too.** Backup scripts report every run to Uptime Kuma push
+  monitors (a dead man's switch: a failed run alerts at once, a run that never happens alerts after
+  25 hours). Proxmox and PBS job failures go out through webhooks. Everything arrives on the phone
+  through ntfy, with the topic kept as a secret and no job details in the message.
 - **CI on every change.** Each compose file is validated, `:latest` tags are rejected, playbooks are
   syntax-checked and linted, and committed secrets fail the build.
 - **Secrets stay out of Git.** Portainer variables, a mode-600 file on the Ansible control node,
@@ -99,7 +103,7 @@ upstream release ─► Renovate PR ─► CI (compose valid, pinned, no secrets
 ```
 
 More detail: **[docs/architecture.md](docs/architecture.md)** (design and decisions) ·
-[docs/hardening.md](docs/hardening.md) (permissions, drives, boot) · [docs/gpu.md](docs/gpu.md) · [docs/ci-cd.md](docs/ci-cd.md) · [ansible/README.md](ansible/README.md) ·
+[docs/hardening.md](docs/hardening.md) (permissions, drives, boot) · [docs/gpu.md](docs/gpu.md) · [docs/monitoring.md](docs/monitoring.md) · [docs/ci-cd.md](docs/ci-cd.md) · [ansible/README.md](ansible/README.md) ·
 [docs/secrets.md](docs/secrets.md)
 
 ## Tech
@@ -142,7 +146,7 @@ ansible/                           inventory, playbooks, bootstrap scripts (see 
   deploy-immich.yml, deploy-portainer.yml   deploy on merge
 .gitea/actions/setup-ansible/   shared: pinned Ansible on the control node
 renovate.json     update policy: what auto-merges, what waits for review, what's locked
-docs/             architecture, hardening, GPUs, CI/CD, secrets, disaster recovery
+docs/             architecture, hardening, GPUs, monitoring, CI/CD, secrets, disaster recovery
 ```
 
 ## Operations reference
@@ -240,7 +244,8 @@ What each label means:
 - [ ] Upgrade Proxmox Backup Server 3.4 → 4 (Debian 13), to match PVE 9 on both hosts (soon)
 - [ ] LAN entry point (reverse proxy + split DNS) so logins also work with the internet down
 - [ ] Scheduled restore test from PBS (restore a guest and the host-backup archives, check they start)
-- [ ] Monitoring and alerting (failed jobs, backups, disk health → push notifications)
+- [x] Alerts on the phone (ntfy): failed or missing backup runs, failed Proxmox/PBS jobs, apps down
+- [ ] More monitoring: disk health (SMART), disk space, patch runs, Plex's GPU
 - [ ] Dedicated monitoring node on separate hardware (out-of-band monitoring): uptime, health checks and alerting that still work when a whole host is down
 - [ ] Gitea, Authentik, Plex, Pi-hole as code in this repo
 - [ ] Managed switch + VLANs (management / servers / trusted / IoT / guest)

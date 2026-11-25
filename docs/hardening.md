@@ -185,4 +185,5 @@ UUIDs and serials, never `/dev/nvmeXn1`.
 - **Guest Notes fields hold no secrets.** Proxmox's Notes are plain text in `/etc/pve`, which is in
   every backup. Passwords belong in Vaultwarden.
 - **Host config into Ansible** (Samba, fstab options, the rsync script), so this page becomes code.
-- **Monitoring:** nothing alerts yet if a drive is missing or a backup fails.
+- **Monitoring:** a missing drive or a failed backup now alerts the phone ([monitoring.md](monitoring.md)).
+  Disk health (SMART) and disk space aren't watched yet.
