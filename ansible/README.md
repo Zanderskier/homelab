@@ -397,7 +397,7 @@ old one behind. In November 2026 that filled CT 109's disk to 99% (29 GB of old 
 Proxmox backs up each container's own disk, but **never its bind mounts** (`mpX: /mnt/...`). On
 skynet, Gitea, Authentik and gitea-runner keep their data on `/mnt/nvme1`, and the survival LXC's
 Kiwix library is on `/mnt/nvme0`. Both are bind mounts, so they were in no backup until this.
-Every night at 02:30 (before the 03:00 Proxmox backups), skynet runs:
+Every night at 02:30 (before the 03:30 Proxmox backups), skynet runs:
 
 ```
 1. check each folder is a mounted drive   fstab has nofail: a dead drive leaves an empty folder,

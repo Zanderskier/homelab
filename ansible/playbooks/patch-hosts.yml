@@ -28,6 +28,26 @@
         executable: /bin/bash
       register: kernels
       changed_when: false
+      check_mode: false   # read-only; a dry run needs it for the summary too
+
+    # Out-of-tree kernel modules (skynet's NVIDIA driver, used by Plex in CT 103) are built by DKMS
+    # for each kernel. If that build failed, rebooting into the new kernel loses the module: Plex
+    # falls back to CPU transcoding. Prints "none" (no DKMS), "ok", or the modules that are missing.
+    - name: Check every DKMS module is built for the newest kernel
+      ansible.builtin.shell: |
+        set -o pipefail
+        command -v dkms >/dev/null || { echo none; exit 0; }
+        newest="{{ kernels.stdout_lines[1] }}"
+        missing=""
+        for mod in $(dkms status | sed 's|/.*||' | sort -u); do
+          dkms status -k "$newest" | grep -q "^$mod/.*: installed" || missing="$missing $mod"
+        done
+        echo "${missing:- ok}" | sed 's/^ //'
+      args:
+        executable: /bin/bash
+      register: dkms_check
+      changed_when: false
+      check_mode: false
 
     - name: Summary
       ansible.builtin.debug:
@@ -36,3 +56,6 @@
           | running {{ kernels.stdout_lines[0] }}
           {{- (' | REBOOT NEEDED to load ' ~ kernels.stdout_lines[1])
               if kernels.stdout_lines[0] != kernels.stdout_lines[1] else '' }}
+          {{- (' | DKMS MODULE MISSING for ' ~ kernels.stdout_lines[1] ~ ': ' ~ dkms_check.stdout
+               ~ '. DO NOT REBOOT: run "dkms autoinstall -k ' ~ kernels.stdout_lines[1] ~ '" and read the error')
+              if dkms_check.stdout not in ['ok', 'none'] else '' }}

@@ -10,4 +10,4 @@ host_backup_paths:
 
 
 host_backup_id: little-skynet             # shows in PBS as host/little-skynet
-host_backup_time: "02:45"          # Pacific; before the 03:30 Proxmox backups
+host_backup_time: "02:45"          # Pacific; before the 03:00 Proxmox backups

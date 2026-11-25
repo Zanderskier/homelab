@@ -21,4 +21,4 @@ host_backup_db_dumps:
     keep: 3                        # dumps kept on disk (PBS keeps the history)
 
 host_backup_id: skynet             # shows in PBS as host/skynet
-host_backup_time: "02:30"          # before the 03:00 Proxmox backups
+host_backup_time: "02:30"          # before the 03:30 Proxmox backups

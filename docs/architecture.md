@@ -1,7 +1,7 @@
 # Architecture and design decisions
 
 How the homelab is put together, and why. The operational how-tos live next to the code:
-[ci-cd.md](ci-cd.md), [secrets.md](secrets.md), [ansible/README.md](../ansible/README.md).
+[hardening.md](hardening.md), [ci-cd.md](ci-cd.md), [secrets.md](secrets.md), [ansible/README.md](../ansible/README.md).
 
 ## Hosts
 
@@ -34,6 +34,9 @@ docker-compose on a full OS, with its own upgrade path.
   tunnels were deleted, which invalidated the leaked tokens.
 - **Admin apps that are reachable through the tunnel** were each tested with unauthenticated
   requests and return 401/403. Their hostnames aren't published in this repo.
+- **No Tailscale.** It was used once for an off-site SMB copy, then removed from both hosts in
+  November 2026. One less agent with network access on the hypervisors. The hosts use Pi-hole for
+  DNS, set through Proxmox (`pvesh set /nodes/<host>/dns`).
 
 ## Deployments: GitOps
 
@@ -96,13 +99,48 @@ agent from the Portainer server, SSH and ping. The rules are enforced on the hos
 container's virtual network cable, so nothing inside the container can turn them off. Break-glass:
 CT 101 → Firewall → Options → Firewall: No.
 
+## Storage
+
+Data lives on separate drives, bind-mounted into the guests. Guest disks (rootfs) live on
+Proxmox storage.
+
+| Host | Folder | Holds |
+|---|---|---|
+| skynet | `/mnt/media` (16 TB HDD) | Movies, TV, audiobooks, downloads, *arr configs (CT 100), read by Plex (CT 103) |
+| skynet | `/mnt/nvme1` | Gitea (CT 107), Authentik (CT 108), the Docker CI runner (CT 109), DB dumps |
+| skynet | `/mnt/nvme0` | The Kiwix library (CT 101) |
+| skynet | `/mnt/nvme2` | Empty (spare) |
+| skynet | `/mnt/nvme3` | Proxmox storage `nvme3`: guest disks (CTs 101, 103, 107, 108, VM 502), ISOs, templates |
+| little-skynet | `/mnt/main-drive` (4 TB HDD) | Vaultwarden and other household app data (bind-mounted into CT 101) |
+| little-skynet | `/mnt/second-drive` (NVMe) | Immich photos (virtiofs into the VM) |
+| little-skynet | `/mnt/temp-mnt` (8 TB USB) | The nightly rsync copy. Only root's rsync writes to it |
+
+**Identify drives by UUID or serial, never `/dev/nvmeXn1`.** The kernel's NVMe numbering can
+change between boots (it did on skynet in November 2026), and the folder names don't follow it.
+fstab uses UUIDs. To match a folder to a physical drive:
+`lsblk -o NAME,SIZE,SERIAL,MODEL,UUID,MOUNTPOINTS`.
+
+**A missing drive can't be mistaken for an empty one.** Every data drive is mounted with
+`nofail,x-systemd.device-timeout=30s`, so a dead drive doesn't stop the host from booting. The
+empty folder under each mount is immutable (`chattr +i`), so nothing can write into it while the
+drive is missing. Proxmox's `nvme3` storage has `is_mountpoint yes`, so Proxmox won't put guest
+disks into an empty folder, and host-backup refuses to run if a drive isn't mounted. Details and
+commands: [hardening.md](hardening.md#drives-and-boot).
+
+**GPUs.** skynet's Quadro P2200 is passed through to Plex (CT 103) for hardware transcoding. The
+host driver is built by DKMS for every installed kernel. The NVIDIA libraries inside CT 103 must be
+the exact same version as the host driver, or Plex silently falls back to the CPU. `patch-hosts`
+warns before a reboot if DKMS didn't build the module for the new kernel. little-skynet's Quadro
+P620 is unused, and its driver is removed.
+
 ## Backups
 
 | Data | Protection |
 |---|---|
-| Every LXC and the Immich VM's disk | **Proxmox Backup Server**, nightly (skynet 03:00, little-skynet 03:30), one namespace per host |
+| Every LXC and the Immich VM's disk | **Proxmox Backup Server**, nightly (little-skynet 03:00, skynet 03:30), one namespace per host |
 | Bind-mounted data PBS's guest backups skip: Gitea/Authentik (`/mnt/nvme1`), the Kiwix library (`/mnt/nvme0`), Immich photos (`/mnt/second-drive`) | **host-backup** (Ansible): nightly to PBS namespace `hosts` with a backup-only token; changed files only, full read on Sundays |
-| Photos, documents, Immich database | Also critical-data backups to a second disk and a Raspberry Pi 4 |
+| Each Proxmox host's own config: `/etc`, `/etc/pve` (every guest's config, storage, backup jobs), `/root`, root's crontab | **host-backup**, same run, as separate archives (`etc`, `pve`, `root`, `crontabs`) |
+| Vaultwarden, photos, documents (little-skynet `/mnt/main-drive`, Immich) | Also a nightly copy at 01:00 (`/root/rsync-data.sh`, root's cron) to a USB disk and a Raspberry Pi 4, with 30 days of old versions. Vaultwarden's database is copied with `sqlite3 .backup` and integrity-checked |
 | Immich database | Immich's built-in daily dumps, plus a `pg_dumpall` before every upgrade |
 
 **Retention:** a PBS prune job per namespace keeps 7 daily, 4 weekly and 6 monthly snapshots; one
@@ -125,6 +163,9 @@ Details: [secrets.md](secrets.md).
 - The Immich database sits on a virtiofs share. Immich recommends local disk. It runs fine, but
   moving it onto the VM disk would also bring it under PBS.
 - Flat network: VLANs (management, servers, IoT, guest) need a managed switch.
+- Four containers are privileged with full device access (little-skynet CT 100 and 101, skynet
+  CT 100 and 102). Converting them to unprivileged is planned. See
+  [hardening.md](hardening.md#still-open).
 - No offsite backup or UPS yet.
 - Monitoring is uptime-only (Uptime Kuma). Alerts for failed patch runs, backups and disk health are
   next.

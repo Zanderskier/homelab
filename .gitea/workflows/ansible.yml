@@ -17,7 +17,7 @@ run-name: >-
 on:
   schedule:
     # Cron is UTC. 12:30 UTC = 04:30 PST / 05:30 PDT: always after the nightly PBS backups
-    # (skynet 03:00, little-skynet 03:30), so every patch run has a fresh backup to roll back to.
+    # (skynet 03:30, little-skynet 03:00), so every patch run has a fresh backup to roll back to.
     - cron: "30 12 * * 0"
   workflow_dispatch:
     inputs:
