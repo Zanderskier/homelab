@@ -14,6 +14,9 @@ umask 077
 set -a; . /etc/host-backup.env; set +a
 status=0
 
+# Kuma push URL (optional: without it, nothing is reported)
+[ -f /etc/host-backup.env ] && . /etc/host-backup.env
+
 echo "== 1. Checking the folders are mounted drives"
 {% for p in host_backup_paths %}
 if ! mountpoint -q {{ p.path }}; then
