@@ -143,7 +143,7 @@ P620 is unused, and its driver is removed. Details: [gpu.md](gpu.md).
 | Every LXC and the Immich VM's disk | **Proxmox Backup Server**, nightly (little-skynet 03:00, skynet 03:30), one namespace per host |
 | Bind-mounted data PBS's guest backups skip: Gitea/Authentik (`/mnt/nvme1`), the Kiwix library (`/mnt/nvme0`), Immich photos (`/mnt/second-drive`) | **host-backup** (Ansible): nightly to PBS namespace `hosts` with a backup-only token; changed files only, full read on Sundays |
 | Each Proxmox host's own config: `/etc`, `/etc/pve` (every guest's config, storage, backup jobs), `/root`, root's crontab | **host-backup**, same run, as separate archives (`etc`, `pve`, `root`, `crontabs`) |
-| Vaultwarden, photos, documents (little-skynet `/mnt/main-drive`, Immich) | Also a nightly copy at 01:00 (`/root/rsync-data.sh`, root's cron) to a USB disk and a Raspberry Pi 4, with 30 days of old versions. Vaultwarden's database is copied with `sqlite3 .backup` and integrity-checked |
+| Vaultwarden, photos, documents (little-skynet `/mnt/main-drive`, Immich) | Also a nightly copy at 01:00 (**rsync-data**, Ansible) to a USB disk and a Raspberry Pi 4, with 30 days of old versions. Vaultwarden's database is copied with `sqlite3 .backup` and integrity-checked |
 | Immich database | Immich's built-in daily dumps, plus a `pg_dumpall` before every upgrade |
 
 **Retention:** a PBS prune job per namespace keeps 7 daily, 4 weekly and 6 monthly snapshots; one

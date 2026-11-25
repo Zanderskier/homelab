@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Nightly copies of critical data to {{ rsync_data_dests | join(' and ') }}
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rsync-data
+# Stay out of the way of everything else on the host.
+Nice=10
+IOSchedulingClass=idle

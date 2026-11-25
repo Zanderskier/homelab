@@ -1,0 +1,147 @@
+---
+# Installs the nightly copies of critical data (Vaultwarden, documents, Immich photos) to extra
+# disks, on a Proxmox host. These are copies besides Proxmox Backup Server, on other disks: a plain
+# folder you can browse, and the first thing to restore from if PBS is gone.
+#   /usr/local/sbin/rsync-data      the script (checks mounts, snapshots Vaultwarden, copies)
+#   rsync-data.service + .timer     runs it daily at rsync_data_time
+# What to copy and where: inventory/host_vars/<host>.yml (rsync_data_*).
+#
+# It replaces the hand-made /root/rsync-data.sh and its cron line: the cron line is removed and
+# the old script is renamed to /root/rsync-data.sh.retired.
+#
+# extra_vars rsync_data_run_now=dry also does a dry run at the end (copies nothing) and shows
+# its log; rsync_data_run_now=true does a real run (about 20-25 minutes). Check mode shows each
+# file change and runs nothing.
+- name: Nightly copies of critical data
+  hosts: proxmox
+  become: true
+  gather_facts: false
+  vars:
+    run_now: "{{ rsync_data_run_now | default('false') | string | lower }}"
+  tasks:
+    - name: Skip hosts with nothing to copy
+      ansible.builtin.meta: end_host
+      when: rsync_data_dests is not defined
+
+    - name: Install rsync and sqlite3 (sqlite3 snapshots Vaultwarden's database)
+      ansible.builtin.apt:
+        name: [rsync, sqlite3]
+        state: present
+
+    - name: Install the script
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/rsync-data/rsync-data.sh.j2"
+        dest: /usr/local/sbin/rsync-data
+        owner: root
+        group: root
+        mode: "0750"
+        validate: bash -n %s
+
+    - name: Install the systemd service and timer
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/rsync-data/{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: [rsync-data.service, rsync-data.timer]
+
+    # In check mode the unit files above aren't really written, so systemd couldn't find the timer.
+    - name: Turn on the daily timer
+      ansible.builtin.systemd_service:
+        name: rsync-data.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: not ansible_check_mode
+
+    # The timer replaces the hand-made cron line. Only after the timer is on, so a night is never
+    # left without a copy. Debian's cron notices the change by itself.
+    - name: Remove the old cron line from root's crontab
+      ansible.builtin.lineinfile:
+        path: /var/spool/cron/crontabs/root
+        regexp: '^[^#].*rsync-data\.sh'
+        state: absent
+
+    - name: Check for the old hand-made script
+      ansible.builtin.stat:
+        path: /root/rsync-data.sh
+      register: old_script
+
+    - name: Rename the old script, so it can't be run by mistake (kept for reference)
+      ansible.builtin.command: mv /root/rsync-data.sh /root/rsync-data.sh.retired
+      args:
+        creates: /root/rsync-data.sh.retired
+      when: old_script.stat.exists
+
+    - name: Explain what check mode left out
+      ansible.builtin.debug:
+        msg: A real run turns on rsync-data.timer here (daily at {{ rsync_data_time }}).
+      when: ansible_check_mode
+
+    - name: When it runs next
+      ansible.builtin.command: systemctl list-timers rsync-data.timer --no-pager  # noqa: command-instead-of-module
+      register: next_run
+      changed_when: false
+      check_mode: false
+      failed_when: false
+
+    - name: Schedule
+      ansible.builtin.debug:
+        msg: "{{ next_run.stdout_lines }}"
+
+    - name: Dry run now (copies nothing)
+      when:
+        - run_now == 'dry'
+        - not ansible_check_mode
+      block:
+        - name: Dry run (waits until it's finished)
+          ansible.builtin.command: /usr/local/sbin/rsync-data
+          environment:
+            DRY: "1"
+          register: dry_run
+          changed_when: false
+          failed_when: false
+
+        - name: Its log (errors, results and what each copy would change)
+          ansible.builtin.debug:
+            msg: "{{ dry_run.stdout_lines | select('search', dry_run_lines) | list }}"
+          vars:
+            dry_run_lines: 'ERROR|RESULT|->|vault items|Number of (created|deleted)|Number of regular files transferred'
+
+        - name: Fail if the dry run found a problem
+          ansible.builtin.assert:
+            that: dry_run.rc == 0
+            fail_msg: The dry run found a problem. The ERROR lines above say what.
+            quiet: true
+
+    - name: Real run now
+      when:
+        - run_now == 'true'
+        - not ansible_check_mode
+      block:
+        - name: Note the time, so only this run's log is shown
+          ansible.builtin.command: date +%s
+          register: run_started
+          changed_when: false
+
+        - name: Copy now (waits until it's finished)
+          ansible.builtin.command: systemctl start rsync-data.service  # noqa: command-instead-of-module
+          changed_when: true
+          failed_when: false
+          register: run_real
+
+        - name: Read its log
+          ansible.builtin.command: journalctl -u rsync-data.service --since "@{{ run_started.stdout }}" --no-pager -o cat
+          register: run_log
+          changed_when: false
+
+        - name: Its log
+          ansible.builtin.debug:
+            msg: "{{ run_log.stdout_lines | select('search', 'ERROR|RESULT|->|vault items|vanished') | list }}"
+
+        - name: Fail if the copy failed
+          ansible.builtin.assert:
+            that: run_real.rc == 0
+            fail_msg: The copy failed. The ERROR lines above say what.
+            quiet: true

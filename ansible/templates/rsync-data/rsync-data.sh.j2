@@ -1,0 +1,113 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# Edit ansible/templates/rsync-data/rsync-data.sh.j2 and host_vars/{{ inventory_hostname }}.yml in
+# the repo, not this file.
+#
+# Nightly copies of critical data to more than one place:
+{% for d in rsync_data_dests %}
+#   {{ d }}
+{% endfor %}
+# Each destination keeps a mirror, plus {{ rsync_data_keep_days }} days of the files that were
+# changed or deleted, under <dest>/_versions/<name>/<date>/.
+#
+# Runs from rsync-data.timer ({{ rsync_data_time }} daily).  Logs: journalctl -u rsync-data.service
+# Run now: systemctl start rsync-data.service
+# Dry run: DRY=1 /usr/local/sbin/rsync-data   (shows what would change, copies nothing)
+
+set -uo pipefail          # no -e: one failed copy must not skip the others
+
+KEEP_DAYS={{ rsync_data_keep_days }}
+TODAY=$(date +%F)
+DESTS=({% for d in rsync_data_dests %}{{ d }}{{ ' ' if not loop.last else '' }}{% endfor %})
+
+[ "${DRY:-0}" = 1 ] && DRY_OPT=(-n) || DRY_OPT=()
+
+FAILS=0
+log()  { echo "$*"; }                       # stdout goes to the journal
+fail() { log "ERROR: $*"; FAILS=$((FAILS + 1)); }
+
+# Only one copy of this script at a time (Immich can take a while)
+exec 9>/run/rsync-data.lock
+flock -n 9 || { log "already running, exiting"; exit 1; }
+
+# A source must be mounted and not empty. Otherwise --delete would treat
+# "nothing there" as "everything was deleted" and wipe the backups.
+check_src() {   # <mount point> <folder>
+    mountpoint -q "$1" || { fail "$1 is not mounted"; return 1; }
+    [ -n "$(ls -A "$2" 2>/dev/null)" ] || { fail "$2 is missing or empty"; return 1; }
+}
+
+# A destination must be a real mounted drive or share. For an automount (x-systemd.automount),
+# the autofs placeholder counts as a mount point even when the share behind it is down, so look
+# for a real filesystem behind it (listing the folder first triggers the automount).
+dest_ok() {     # <folder>
+    ls -A "$1" >/dev/null 2>&1
+    mountpoint -q "$1" && findmnt -n -o FSTYPE "$1" | grep -qvx autofs
+}
+
+# Copy one source to every destination.
+sync_to_all() {   # <name> <source folder> [extra rsync options...]
+    local name=$1 src=$2 root rc
+    shift 2
+    for root in "${DESTS[@]}"; do
+        if ! dest_ok "$root"; then
+            fail "$root is not mounted, skipped $name"
+            continue
+        fi
+        log "$name -> $root/$name"
+        rsync -a --delete --stats "${DRY_OPT[@]}" \
+            --backup --backup-dir="$root/_versions/$name/$TODAY" \
+            "$@" "$src/" "$root/$name/"
+        rc=$?
+        case $rc in
+            0)  ;;
+            24) log "$name -> $root: some files vanished during the copy (normal for live data)" ;;
+            *)  fail "$name -> $root: rsync exit code $rc" ;;
+        esac
+    done
+}
+
+log "=== start${DRY:+ (dry run)} ==="
+
+{% for j in rsync_data_jobs %}
+# {{ loop.index }}. {{ j.name }}{{ (': ' ~ j.comment) if j.comment is defined else '' }}
+if check_src "{{ j.mount }}" "{{ j.src }}"; then
+    sync_to_all {{ j.name }} "{{ j.src }}"{% for e in j.exclude | default([]) %} --exclude='{{ e }}'{% endfor %}
+
+fi
+
+{% endfor %}
+{% if rsync_data_vaultwarden is defined %}
+{% set vw = rsync_data_vaultwarden %}
+# {{ rsync_data_jobs | length + 1 }}. Vaultwarden: a consistent snapshot of the database, not a copy of the live file
+if ! command -v sqlite3 >/dev/null; then
+    fail "sqlite3 is not installed; Vaultwarden NOT backed up"
+elif check_src "{{ vw.mount }}" "{{ vw.src }}"; then
+    STAGE=$(mktemp -d /var/tmp/vw-stage.XXXXXX)
+    trap 'rm -rf "$STAGE"' EXIT
+    if rsync -a --exclude='db.sqlite3*' "{{ vw.src }}/" "$STAGE/" \
+       && sqlite3 "{{ vw.src }}/db.sqlite3" ".backup '$STAGE/db.sqlite3'" \
+       && [ "$(sqlite3 "$STAGE/db.sqlite3" 'PRAGMA integrity_check;')" = ok ]; then
+        log "vaultwarden: snapshot OK, $(sqlite3 "$STAGE/db.sqlite3" 'SELECT count(*) FROM ciphers;') vault items"
+        sync_to_all {{ vw.name }} "$STAGE"
+    else
+        fail "vaultwarden: snapshot failed, the existing backups were left as they were"
+    fi
+fi
+
+{% endif %}
+# Last: drop old versions (dated folders only)
+if [ "${DRY:-0}" != 1 ]; then
+    for root in "${DESTS[@]}"; do
+        dest_ok "$root" || continue
+        find "$root/_versions" -mindepth 2 -maxdepth 2 -type d -name '20??-??-??' \
+             -mtime +"$KEEP_DAYS" -exec rm -rf {} + 2>/dev/null
+    done
+fi
+
+if [ "$FAILS" -eq 0 ]; then
+    log "RESULT: OK"
+else
+    log "RESULT: FAILED ($FAILS problems)"
+    exit 1
+fi

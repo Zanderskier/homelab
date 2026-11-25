@@ -29,6 +29,7 @@ case "$PLAYBOOK" in
   docker)             WHAT="Installs Docker CE from Docker's own repository on the docker_hosts group. Safe to run again." ;;
   kiwix-update)       WHAT="Installs/updates the monthly Kiwix ZIM update on survival. extra_vars kiwix_update_run_now=true also starts one now (in the background)." ;;
   host-backup)        WHAT="Installs/updates the nightly backup of host folders (e.g. /mnt/nvme1) to PBS. extra_vars host_backup_run_now=true also runs one now." ;;
+  rsync-data)         WHAT="Installs/updates the nightly copies of critical data (Vaultwarden, documents, photos) to the USB disk and the Pi. extra_vars rsync_data_run_now=dry (or true) also runs one now." ;;
   timezone)           WHAT="Sets every machine to the timezone in group_vars/all.yml. Only needed for a new machine or a timezone change." ;;
   portainer-discover) WHAT="Report only. Shows Docker + Portainer on every host. Changes nothing." ;;
   *) echo "Unknown playbook '$PLAYBOOK'."; exit 1 ;;

@@ -28,6 +28,7 @@ ansible/
     portainer-discover.yml read-only report: Docker + Portainer on every host, environments, stacks
     portainer.yml          Portainer server + standard agents, one pinned version, environments via API
     host-backup.yml        nightly PBS backup of host folders that Proxmox backups skip (bind mounts)
+    rsync-data.yml         nightly copies of critical data to the USB disk and the Pi (little-skynet)
     docker-cleanup.yml     unused images, orphaned Portainer stack records. Safe any time
     runner-prune.yml       daily timer that prunes the CI runner's inner Docker (job images)
     docker.yml             Docker CE from Docker's own repository on the docker_hosts group
@@ -69,6 +70,7 @@ Usually none: the schedule and the two deploy workflows cover normal operation.
 | `docker-cleanup` | disks are filling up, or Portainer shows stacks for hosts that are gone | Yes, removes only unused things |
 | `immich`, `portainer` | a deploy failed and you've fixed the cause, or you edited a template | Yes |
 | `host-backup` | you changed what's backed up, or the PBS token | Yes (files + timer only) |
+| `rsync-data` | you changed what's copied or where (`rsync_data_*` in host_vars) | Yes (files + timer; `rsync_data_run_now=dry` copies nothing) |
 | `runner-prune` | a new runner, or you changed `runner_prune_time` | Yes (timer only) |
 | `users`, `harden-ssh` | a new machine, or a password change | Yes |
 | `timezone` | a new machine, or a schedule runs at the wrong hour | Yes (timezone only) |
@@ -451,6 +453,32 @@ proxmox-backup-client restore --ns hosts host/skynet/<time> nvme1.mpxar /mnt/nvm
 
 For Gitea, stop its containers, put the files back, then (if the database files are damaged) load
 the newest dump from `db-dumps/` into a fresh `gitea-db` with `gunzip -c ... | psql -U gitea`.
+
+## Critical-data copies (`rsync-data`)
+
+PBS is one copy, on one disk. For the data that matters most, little-skynet keeps two more, as
+plain folders you can browse with no tools: on the 8 TB USB disk (`/mnt/temp-mnt`) and on the
+Pi 4's SSD (`/mnt/data-backup`, over SMB). Daily at 01:00, `rsync-data.timer` runs:
+
+```
+for each job in host_vars (file-browser-data, immich_backup):
+    the source must be a mounted drive and not empty   (else --delete would wipe the copies)
+    rsync --delete to each destination that is really mounted
+        changed and deleted files go to <dest>/_versions/<name>/<date>/ (kept 30 days)
+vaultwarden_backup: sqlite3 .backup of the live database + integrity check, then the same copy
+```
+
+- **What and where:** `rsync_data_*` in `inventory/host_vars/little-skynet.yml`.
+- **Logs:** `journalctl -u rsync-data.service`. Every run ends with `RESULT: OK` or
+  `RESULT: FAILED (<n> problems)`, with an `ERROR:` line per problem.
+- **Run now:** `systemctl start rsync-data.service`. Dry run: `DRY=1 /usr/local/sbin/rsync-data`,
+  or the playbook with `rsync_data_run_now=dry`.
+- **Destinations must be real mounts.** `/mnt/data-backup` is an automount (`x-systemd.automount`),
+  and the automount placeholder counts as a mount point even when the Pi is off. The script looks
+  for the real filesystem behind it, so a missing Pi is an `ERROR`, not a copy onto the boot disk.
+- **Restore from the USB copy first.** The Pi's SMB share stores no Linux owners or symlinks.
+- **History:** this was the hand-made `/root/rsync-data.sh` with a cron line. The playbook removed
+  the cron line and renamed the script to `/root/rsync-data.sh.retired`.
 
 ## Adding a machine
 

@@ -25,7 +25,7 @@ for d in /root /mnt/*; do mountpoint -q "$d" || [ "$d" = /root ] || continue
 | `/root` | `777` (skynet), owned by `alex` (little-skynet) | `root:root 700`, nothing group/world-writable | Anyone who could edit root's `.bashrc` would get root the next time root logged in |
 | `/root/.ssh` | `777` | `700` | Holds root's authorized keys |
 | `/root/.smbcredentials` | `777` / `alex 755` | `root:root 600` | The SMB share's username and password. Mounts run as root, so nothing else needs it |
-| `/root/rsync-data.sh` (little-skynet) | owned by `alex` | `root:root`, not group/world-writable | Root's cron runs it nightly: whoever can edit it becomes root at 01:00 |
+| `/root/rsync-data.sh` (little-skynet) | owned by `alex` | `root:root`, not group/world-writable | Root's cron ran it nightly: whoever could edit it became root at 01:00. Now replaced by `/usr/local/sbin/rsync-data` (Ansible, `root:root 0750`) |
 
 ```bash
 chown -R root:root /root && chmod 700 /root && chmod -R go-w /root
@@ -122,9 +122,10 @@ encrypt or delete it, `_versions` folders included.
   from Windows.
 - **No container mounts it.** CT 101 had it as `mp1`, unused, and it's removed.
 - **Only root's rsync writes to it:** `/mnt/temp-mnt` is `root:root 755`, nothing world-writable.
-- **The rsync runs at 01:00** (`0 1 * * * /bin/bash /root/rsync-data.sh >> /var/log/rsync-data.log 2>&1`),
-  rotated by `/etc/logrotate.d/rsync-data`. It finishes before the 02:45 host-backup and the 03:00
-  PBS job. Each run ends with a `RESULT` line.
+- **The copy runs at 01:00** from `rsync-data.timer`, installed by Ansible
+  (`playbooks/rsync-data.yml`, see [ansible/README.md](../ansible/README.md#critical-data-copies-rsync-data)).
+  It finishes before the 02:45 host-backup and the 03:00 PBS job. Each run ends with a `RESULT`
+  line in `journalctl -u rsync-data.service`.
 
 ## Drives and boot
 

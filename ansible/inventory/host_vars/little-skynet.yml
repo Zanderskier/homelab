@@ -11,3 +11,27 @@ host_backup_paths:
 
 host_backup_id: little-skynet             # shows in PBS as host/little-skynet
 host_backup_time: "02:45"          # Pacific; before the 03:00 Proxmox backups
+
+# Nightly copies of critical data (playbooks/rsync-data.yml): a second and third copy, on other
+# disks, of what matters most. Runs before host-backup (02:45) and the Proxmox backups (03:00);
+# a run takes about 20-25 minutes.
+rsync_data_time: "01:00"
+rsync_data_keep_days: 30          # changed or deleted files are kept this long under _versions/
+rsync_data_dests:
+  - /mnt/temp-mnt                 # 8 TB USB disk (ext4): restore from this one first
+  - /mnt/data-backup              # Pi 4, 2 TB SSD over SMB (loses Linux owners, no symlinks)
+rsync_data_jobs:
+  - name: file-browser-data       # folder name on each destination
+    mount: /mnt/main-drive        # must be a mounted drive, or the job is skipped
+    src: /mnt/main-drive
+    exclude:
+      - /vaultwarden/             # copied below, as a consistent snapshot
+      - Singleton*                # Obsidian's lock symlinks; the Pi's SMB share can't store symlinks
+  - name: immich_backup
+    mount: /mnt/second-drive
+    src: /mnt/second-drive/immich # photos, plus Immich's own database dumps
+    comment: Immich photos and Immich's database dumps
+rsync_data_vaultwarden:           # SQLite: copied with sqlite3 .backup and integrity-checked
+  name: vaultwarden_backup
+  mount: /mnt/main-drive
+  src: /mnt/main-drive/vaultwarden
