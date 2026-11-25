@@ -12,7 +12,8 @@
 #
 # Runs from rsync-data.timer ({{ rsync_data_time }} daily).  Logs: journalctl -u rsync-data.service
 # Run now: systemctl start rsync-data.service
-# Dry run: DRY=1 /usr/local/sbin/rsync-data   (shows what would change, copies nothing)
+# Dry run: DRY=1 /usr/local/sbin/rsync-data   (shows what would change, copies nothing, reports nothing)
+# Each real run reports OK or FAILED to an Uptime Kuma push monitor (URL in /etc/rsync-data.env).
 
 set -uo pipefail          # no -e: one failed copy must not skip the others
 
@@ -32,8 +33,9 @@ fail() { log "ERROR: $*"; FAILS=$((FAILS + 1)); }
 # Tell Uptime Kuma how the run went. Must never change the backup's own result.
 push() {   # <up|down> <message, %20 for spaces>
     [ -n "${PUSH_URL:-}" ] || return 0
-    # TODO: skip in a dry run (why? what would Kuma think if a dry run said "up"?)
-    curl -d "$PUSH_URL?status=$1&msg=$2" \
+    # A dry run copies nothing: reporting "up" would hide a night without a backup.
+    [ "${DRY:-0}" = 1 ] && return 0
+    curl -fsS -m 10 --retry 3 -o /dev/null "$PUSH_URL?status=$1&msg=$2" \
         || log "warning: could not reach Uptime Kuma (the copy itself is unaffected)"
 }
 
@@ -116,18 +118,13 @@ if [ "${DRY:-0}" != 1 ]; then
     done
 fi
 
+# Report to Uptime Kuma. "down" alerts at once; a run that never happens is caught by the
+# monitor's 25 h heartbeat.
 if [ "$FAILS" -eq 0 ]; then
     log "RESULT: OK"
+    push up OK
 else
     log "RESULT: FAILED ($FAILS problems)"
-    exit 1
-fi
-
-if [ "$FAILS" -eq 0 ]; then
-    log "RESULT: OK"
-    # TODO <not sure>
-else
-    log "RESULT: FAILED ($FAILS problems)"
-    # TODO   <not sure> <- before the exit
+    push down "FAILED%20($FAILS%20problems)"
     exit 1
 fi

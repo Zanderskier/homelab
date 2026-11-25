@@ -9,6 +9,9 @@
 # It replaces the hand-made /root/rsync-data.sh and its cron line: the cron line is removed and
 # the old script is renamed to /root/rsync-data.sh.retired.
 #
+# Reports each real run to an Uptime Kuma push monitor (rsync_data_push_url in
+# /ansible_config/secrets.yml, installed as /etc/rsync-data.env). Without it, nothing is reported.
+#
 # extra_vars rsync_data_run_now=dry also does a dry run at the end (copies nothing) and shows
 # its log; rsync_data_run_now=true does a real run (about 20-25 minutes). Check mode shows each
 # file change and runs nothing.
@@ -31,11 +34,11 @@
     - name: Install the settings file (root only, holds the Kuma push URL)
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../templates/rsync-data/rsync-data.env.j2"
-        dest: TODO <not sure>
+        dest: /etc/rsync-data.env
         owner: root
         group: root
-        mode: TODO <not sure>
-      no_log: TODO <not sure>
+        mode: "0600"         # anyone with the URL could mark the backup healthy
+      no_log: true           # the diff would print the URL in the Actions log
 
     - name: Install the script
       ansible.builtin.template:
