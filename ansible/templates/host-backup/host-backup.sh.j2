@@ -9,15 +9,31 @@
 #   3. send the drive folders and the host config to Proxmox Backup Server ({{ pbs_server }}, datastore {{ pbs_datastore }},
 #      namespace {{ pbs_namespace }}, backup host/{{ host_backup_id }})
 # Logs: journalctl -u host-backup.service     Run now: systemctl start host-backup.service
+# Every run reports up or down to an Uptime Kuma push monitor (PUSH_URL in /etc/host-backup.env).
 set -uo pipefail
 umask 077
-set -a; . /etc/host-backup.env; set +a
+set -a; . /etc/host-backup.env; set +a      # PBS token, fingerprint and the Kuma push URL
 status=0
+reason=FAILED                               # what Kuma shows if the run fails (%20 = space)
+
+# Tell Uptime Kuma how the run went. Must never change the backup's own result.
+push() {   # <up|down> <message, %20 for spaces>
+  [ -n "${PUSH_URL:-}" ] || return 0
+  curl -fsS -m 10 --retry 3 -o /dev/null "$PUSH_URL?status=$1&msg=$2"     || echo "warning: could not reach Uptime Kuma (the backup itself is unaffected)"
+}
+# Runs on every way out of this script: the normal end, the early exit when a drive is missing,
+# or anything unexpected. A run that never starts is caught by the monitor's 25 h heartbeat.
+report() {
+  local rc=$?
+  if [ "$rc" -eq 0 ]; then push up OK; else push down "$reason"; fi
+}
+trap report EXIT
 
 echo "== 1. Checking the folders are mounted drives"
 {% for p in host_backup_paths %}
 if ! mountpoint -q {{ p.path }}; then
   echo "ERROR: {{ p.path }} is not a mounted drive (missing or failed?). Nothing was backed up."
+  reason="drive%20not%20mounted"
   exit 1
 fi
 echo "ok  {{ p.path }} ($(findmnt -no SOURCE {{ p.path }}))"
@@ -84,5 +100,9 @@ else
   status=1
 fi
 
-[ "$status" -eq 0 ] && echo "RESULT: OK" || echo "RESULT: FAILED (see ERROR lines above)"
-exit "$status"
+if [ "$status" -eq 0 ]; then
+  echo "RESULT: OK"
+else
+  echo "RESULT: FAILED (see ERROR lines above)"
+fi
+exit "$status"   # the EXIT trap reports this result to Uptime Kuma
