@@ -166,10 +166,17 @@ UUIDs and serials, never `/dev/nvmeXn1`.
 
 ## Smaller changes
 
-- **Tailscale removed from both hosts** (package, repo, its DNS settings). DNS is Pi-hole, set
+- **Tailscale removed from both hosts and from little-skynet CT 101** (package, repo, its DNS
+  settings). DNS is Pi-hole, set
   through Proxmox: `pvesh set /nodes/$(hostname)/dns --search home --dns1 192.168.50.2`.
 - **Unused mounts removed:** skynet's `/mnt/remote-share` (an SMB mount with `file_mode=0777`) and
   stray folders (`/mnt/media-storage` on the host).
+- **Executables removed from the media drive:** a fake episode (`.scr`, malware) and seven
+  `RARBG_DO_NOT_MIRROR.exe` files. Found and removed with one `find ... -print -delete` (never
+  turn a `find` into an `rm` by editing it). qBittorrent now refuses those file types.
+- **Guest Notes fields hold no secrets.** Proxmox's Notes are plain text in `/etc/pve`, which is in
+  every backup. A Google OAuth secret and an app password found in little-skynet CT 100's Notes
+  were moved to Vaultwarden and rotated.
 - **The CI runner's job images are pruned daily** (`runner-prune`), so CT 109 doesn't fill up.
 - **Plex's GPU libraries are held at the host driver's version**, after an upgrade got them out of
   sync and Plex silently fell back to the CPU. **little-skynet's unused NVIDIA driver is fully
@@ -180,10 +187,13 @@ UUIDs and serials, never `/dev/nvmeXn1`.
 - **Privileged containers with full device access** (`lxc.cgroup2.devices.allow: a`):
   little-skynet CT 100 and 101, skynet CT 100 and 102. Root in those containers is close to root on
   the host. Converting them to unprivileged (with ID-mapped bind mounts) is planned.
-- **Which containers mount `/mnt/media`:** it should be only CT 100 (writers) and CT 103 (Plex,
-  read-only). Check with `grep -H /mnt/media /etc/pve/lxc/*.conf`.
-- **Guest Notes fields hold no secrets.** Proxmox's Notes are plain text in `/etc/pve`, which is in
-  every backup. Passwords belong in Vaultwarden.
-- **Host config into Ansible** (Samba, fstab options, the rsync script), so this page becomes code.
+- **One PBS token per host.** Both hosts' host-backup uses `host-backup@pbs!skynet`. In PBS a
+  backup group belongs to the token that created it, so with one token each host could add to the
+  other's backup history. A token per host would keep them apart.
+- **Host config into Ansible** (Samba, fstab options), so this page becomes code. The rsync script
+  is done (`rsync-data`).
+
+Checked and fine: only CT 100 (writers) and CT 103 (Plex) mount `/mnt/media`
+(`grep -H /mnt/media /etc/pve/lxc/*.conf`); Gitea and the CI runner no longer do.
 - **Monitoring:** a missing drive or a failed backup now alerts the phone ([monitoring.md](monitoring.md)).
   Disk health (SMART) and disk space aren't watched yet.

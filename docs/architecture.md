@@ -149,7 +149,10 @@ P620 is unused, and its driver is removed. Details: [gpu.md](gpu.md).
 **Retention:** a PBS prune job per namespace keeps 7 daily, 4 weekly and 6 monthly snapshots; one
 daily verify job checks them.
 
-**Not yet done:** a scheduled restore test from PBS, an offsite copy (3-2-1) and a UPS.
+**Restore tests:** a full guest restore (Vaultwarden's CT, 26 GB in 6 minutes) and reading the vault
+from the rsync copy offline, both passed in November 2026. Scheduled tests, the host-backup archives,
+an offsite copy (3-2-1) and a UPS are not done yet. Runbook:
+[disaster-recovery/README.md](disaster-recovery/README.md).
 
 ## Secrets
 
@@ -170,6 +173,8 @@ Details: [secrets.md](secrets.md).
   CT 100 and 102). Converting them to unprivileged is planned. See
   [hardening.md](hardening.md#still-open).
 - No offsite backup or UPS yet.
+- Both hosts' host-backup share one PBS API token; one token per host would isolate their backup
+  groups.
 - Alerts reach the phone through ntfy: failed or missing backup runs (Kuma push monitors), failed
   Proxmox/PBS jobs (webhooks), and apps or hosts going down. Kuma itself runs on little-skynet, and
   disk health, disk space and patch runs aren't watched yet. See [monitoring.md](monitoring.md).

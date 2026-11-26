@@ -438,7 +438,7 @@ but whose size and mtime didn't (rare, e.g. a tool that restores the old mtime).
 **Host config too.** Both hosts also send their own config, listed once in
 `host_backup_config_paths` (`group_vars/all.yml`): `etc`, `pve`, `root` and `crontabs` archives
 (`/etc`, `/etc/pve`, `/root`, `/var/spool/cron/crontabs`). That's fstab, Samba, the network, every
-guest's config, storage and backup jobs, and hand-made scripts such as `rsync-data.sh`. `/etc/pve`
+guest's config, storage and backup jobs, and hand-made scripts in `/root`. `/etc/pve`
 is its own archive because it's a separate filesystem (Proxmox's pmxcfs) mounted on `/etc`, and the
 client never crosses into another filesystem: the `etc` archive alone would silently leave it out.
 These archives hold secrets (`/etc/pve/priv`, the PBS token, SMB credentials), so an off-site copy
