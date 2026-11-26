@@ -10,7 +10,7 @@ on:
 jobs:
   renovate:
     runs-on: ubuntu-latest
-    container: ghcr.io/renovatebot/renovate:44.263.3
+    container: ghcr.io/renovatebot/renovate:44.263.5
     steps:
       - name: Run Renovate
         run: renovate
