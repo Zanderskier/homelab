@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Health checks every {{ health_check_every_minutes | default(5) }} minutes
+
+[Timer]
+OnCalendar=*:0/{{ health_check_every_minutes | default(5) }}
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

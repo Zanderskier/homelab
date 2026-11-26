@@ -29,6 +29,7 @@ ansible/
     portainer.yml          Portainer server + standard agents, one pinned version, environments via API
     host-backup.yml        nightly PBS backup of host folders that Proxmox backups skip (bind mounts)
     rsync-data.yml         nightly copies of critical data to the USB disk and the Pi (little-skynet)
+    health-check.yml       5-minute health checks (Plex GPU), each reporting to an Uptime Kuma push monitor
     docker-cleanup.yml     unused images, orphaned Portainer stack records. Safe any time
     runner-prune.yml       daily timer that prunes the CI runner's inner Docker (job images)
     docker.yml             Docker CE from Docker's own repository on the docker_hosts group
@@ -71,6 +72,7 @@ Usually none: the schedule and the two deploy workflows cover normal operation.
 | `immich`, `portainer` | a deploy failed and you've fixed the cause, or you edited a template | Yes |
 | `host-backup` | you changed what's backed up, or the PBS token | Yes (files + timer only) |
 | `rsync-data` | you changed what's copied or where (`rsync_data_*` in host_vars) | Yes (files + timer; `rsync_data_run_now=dry` copies nothing) |
+| `health-check` | you added or changed a check (`health_checks` in host_vars) | Yes (files + timer; `health_check_run_now=true` runs them once) |
 | `runner-prune` | a new runner, or you changed `runner_prune_time` | Yes (timer only) |
 | `users`, `harden-ssh` | a new machine, or a password change | Yes |
 | `timezone` | a new machine, or a schedule runs at the wrong hour | Yes (timezone only) |

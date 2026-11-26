@@ -30,6 +30,7 @@ case "$PLAYBOOK" in
   kiwix-update)       WHAT="Installs/updates the monthly Kiwix ZIM update on survival. extra_vars kiwix_update_run_now=true also starts one now (in the background)." ;;
   host-backup)        WHAT="Installs/updates the nightly backup of host folders (e.g. /mnt/nvme1) to PBS. extra_vars host_backup_run_now=true also runs one now." ;;
   rsync-data)         WHAT="Installs/updates the nightly copies of critical data (Vaultwarden, documents, photos) to the USB disk and the Pi. extra_vars rsync_data_run_now=dry (or true) also runs one now." ;;
+  health-check)       WHAT="Installs/updates the 5-minute health checks (e.g. Plex GPU) that report to Uptime Kuma. extra_vars health_check_run_now=true also runs them once." ;;
   timezone)           WHAT="Sets every machine to the timezone in group_vars/all.yml. Only needed for a new machine or a timezone change." ;;
   portainer-discover) WHAT="Report only. Shows Docker + Portainer on every host. Changes nothing." ;;
   *) echo "Unknown playbook '$PLAYBOOK'."; exit 1 ;;

@@ -1,0 +1,80 @@
+---
+# Installs small health checks on a Proxmox host, run every few minutes, each reporting to its own
+# Uptime Kuma push monitor (see docs/monitoring.md). First check: Plex's GPU on skynet, which
+# silently broke once (docs/gpu.md).
+#   /usr/local/sbin/health-check    the script (one line per check, from host_vars)
+#   /etc/health-check.env           one push URL per check, root only
+#   health-check.service + .timer   every health_check_every_minutes (default 5)
+# What to check: health_checks in inventory/host_vars/<host>.yml.
+# Push URLs: health_check_push_urls.<name> in /ansible_config/secrets.yml.
+#
+# extra_vars health_check_run_now=true also runs the checks once and shows each result.
+# Check mode shows each file change and runs nothing.
+- name: Health checks reported to Uptime Kuma
+  hosts: proxmox
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Skip hosts with no checks
+      ansible.builtin.meta: end_host
+      when: health_checks is not defined
+
+    - name: Check every check's name can be a shell variable name
+      ansible.builtin.assert:
+        that: item.name is match('^[A-Za-z0-9_]+$')
+        fail_msg: "health_checks: '{{ item.name }}' may only use letters, digits and _"
+        quiet: true
+      loop: "{{ health_checks }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Install the settings file (root only, holds the push URLs)
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/health-check/health-check.env.j2"
+        dest: /etc/health-check.env
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Install the script
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/health-check/health-check.sh.j2"
+        dest: /usr/local/sbin/health-check
+        owner: root
+        group: root
+        mode: "0750"
+        validate: bash -n %s
+
+    - name: Install the systemd service and timer
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/health-check/{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: [health-check.service, health-check.timer]
+
+    # In check mode the unit files above aren't really written, so systemd couldn't find the timer.
+    - name: Turn on the timer
+      ansible.builtin.systemd_service:
+        name: health-check.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: not ansible_check_mode
+
+    - name: Run the checks once now
+      ansible.builtin.command: /usr/local/sbin/health-check
+      environment:
+        VERBOSE_RESULTS: "1"
+      register: run_now
+      changed_when: false
+      when:
+        - health_check_run_now | default(false) | bool
+        - not ansible_check_mode
+
+    - name: Results
+      ansible.builtin.debug:
+        msg: "{{ run_now.stdout_lines }}"
+      when: run_now is not skipped
