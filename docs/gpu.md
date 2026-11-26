@@ -40,7 +40,7 @@ same driver's libraries. No GPU passthrough to a VM, so the card stays usable by
 
 **The rule: the container's libraries must be exactly the host driver's version.** If they differ,
 `nvidia-smi` inside the container fails with `Driver/library version mismatch`, and Plex silently
-transcodes on the CPU. Nothing alerts.
+transcodes on the CPU. The `plex_gpu` health check alerts within about 10 minutes.
 
 ### Checking it works
 
@@ -85,7 +85,8 @@ didn't happen. Then run `dkms autoinstall -k <kernel>` and read the error (usual
 install is invisible to apt, so the container's apt upgraded freely.
 **Fix:** hold the container side, upgrade both together.
 **Still missing:** monitoring. A check that `nvidia-smi` works in CT 103 would have caught this
-on day one. Planned as a Kuma push monitor ([monitoring.md](monitoring.md#gaps)).
+on day one. Now there is one: `health-check` runs `pct exec 103 -- nvidia-smi -L` every 5 minutes and
+alerts after two failures in a row ([monitoring.md](monitoring.md#health-checks-health-check)).
 
 ## little-skynet: Quadro P620, unused
 

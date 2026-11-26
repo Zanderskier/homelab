@@ -22,3 +22,15 @@ host_backup_db_dumps:
 
 host_backup_id: skynet             # shows in PBS as host/skynet
 host_backup_time: "02:30"          # before the 03:30 Proxmox backups
+
+# Health checks (playbooks/health-check.yml): small checks run every 5 minutes, each reporting to
+# its own Uptime Kuma push monitor. Push URLs: health_check_push_urls.<name> in secrets.yml.
+#   name     letters, digits and _ only (it becomes a shell variable name)
+#   command  run as a list of words (no shell), with a 60 s time limit
+#   expect   text that must appear in the command's output; the check also fails if it exits non-zero
+#   problem  what the phone alert says (no paths or secrets: it goes through ntfy.sh)
+health_checks:
+  - name: plex_gpu
+    command: [pct, exec, "103", --, nvidia-smi, -L]
+    expect: Quadro P2200
+    problem: Plex GPU unusable in CT 103

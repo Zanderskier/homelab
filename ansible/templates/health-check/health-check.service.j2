@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Health checks, reported to Uptime Kuma push monitors
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/health-check
+Nice=10

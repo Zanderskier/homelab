@@ -137,8 +137,8 @@ stacks/little-skynet/immich/       deployed by Ansible, not Portainer
 ansible/                           inventory, playbooks, bootstrap scripts (see ansible/README.md)
   playbooks/  ping · patch-guests · patch-hosts · users · harden-ssh · timezone · docker ·
               immich · portainer · portainer-discover · docker-cleanup · host-backup ·
-              rsync-data · kiwix-update · runner-prune
-  templates/  scripts and systemd units the playbooks install (host-backup, rsync-data, kiwix-update, runner-prune)
+              rsync-data · health-check · kiwix-update · runner-prune
+  templates/  scripts and systemd units the playbooks install (host-backup, rsync-data, health-check, kiwix-update, runner-prune)
 .gitea/workflows/
   lint.yml        compose validation, pin check, secret scan, ansible syntax + lint
   renovate.yml    Renovate every 4 hours
@@ -245,7 +245,8 @@ What each label means:
 - [ ] LAN entry point (reverse proxy + split DNS) so logins also work with the internet down
 - [ ] Scheduled restore test from PBS (restore a guest and the host-backup archives, check they start)
 - [x] Alerts on the phone (ntfy): failed or missing backup runs, failed Proxmox/PBS jobs, apps down
-- [ ] More monitoring: disk health (SMART), disk space, patch runs, Plex's GPU
+- [x] Plex GPU health check (5-minute push check)
+- [ ] More monitoring: disk health (SMART), disk space, patch runs
 - [ ] Dedicated monitoring node on separate hardware (out-of-band monitoring): uptime, health checks and alerting that still work when a whole host is down
 - [ ] Gitea, Authentik, Plex, Pi-hole as code in this repo
 - [ ] Managed switch + VLANs (management / servers / trusted / IoT / guest)

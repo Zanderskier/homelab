@@ -19,6 +19,7 @@ PBS verify / prune / GC ───────(severity error)──► PBS webho
 | `host-backup` (skynet 02:30, little-skynet 02:45) | One Kuma push monitor per host, heartbeat 25 h | A run fails, a drive isn't mounted (at once), or no run for 25 h |
 | Guest backups (little-skynet 03:00, skynet 03:30) | PVE notifications on each host | A job ends with an error |
 | PBS verify, prune, garbage collection | PBS notifications | A job ends with an error |
+| Plex can use the GPU (skynet, every 5 min) | `health-check` → Kuma push monitor, heartbeat 15 min | Two failed checks in a row (10 min), or no check for 15 min |
 | Apps and hosts up | Kuma HTTP/ping monitors, 2 retries | Three failed checks in a row |
 
 ## How the push monitors work (a dead man's switch)
@@ -88,6 +89,29 @@ A push URL is the URL **without** Kuma's example query: it ends in `/api/push/<t
 scripts add their own `?status=...`. Anyone with a push URL can mark that job healthy, so each one
 is treated as a secret.
 
+## Health checks (`health-check`)
+
+For things that can break between nightly jobs, a Proxmox host runs `/usr/local/sbin/health-check`
+every 5 minutes (`health-check.timer`). Each check is a few lines of `health_checks` in the host's
+host_vars, with its own push monitor:
+
+```yaml
+health_checks:
+  - name: plex_gpu                                  # letters, digits, _
+    command: [pct, exec, "103", --, nvidia-smi, -L] # run as a list of words, no shell, 60 s limit
+    expect: Quadro P2200                            # must be in the output, and exit code 0
+    problem: Plex GPU unusable in CT 103            # the alert text (goes through ntfy.sh)
+```
+
+- **Pass:** push `up`. **One failure:** nothing (a reboot or a slow moment shouldn't wake anyone).
+  **Two in a row:** push `down`, so the phone buzzes within about 10 minutes. The journal only
+  gets failures and recoveries.
+- **Kuma side:** a push monitor per check, heartbeat 900 s (15 min), retries 0. Its URL is
+  `health_check_push_urls.<name>` in `/ansible_config/secrets.yml`, installed in
+  `/etc/health-check.env` (0600).
+- **Adding a check:** add an entry, a push monitor and its URL, then run `health-check`.
+- **Run by hand:** `/usr/local/sbin/health-check` in a terminal prints every result.
+
 ## Adding a push monitor for a new job
 
 1. Kuma → Add New Monitor → **Push**. Heartbeat: the job's interval plus slack (daily: `90000` s),
@@ -106,5 +130,5 @@ is treated as a secret.
   roadmap).
 - **A disabled or deleted PVE/PBS job stays silent.** Their notifications only fire when a job runs
   and fails.
-- **Not watched yet:** Plex's GPU (see [gpu.md](gpu.md)), disk health (SMART), disks filling up,
-  failed `patch-guests` runs, the PBS datastore's free space.
+- **Not watched yet:** disk health (SMART), disks filling up, failed `patch-guests` runs, the PBS
+  datastore's free space. Most of these fit as more `health_checks` entries.

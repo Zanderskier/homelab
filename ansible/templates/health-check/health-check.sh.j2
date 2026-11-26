@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# Edit ansible/templates/health-check/health-check.sh.j2 and host_vars/{{ inventory_hostname }}.yml
+# in the repo, not this file.
+#
+# Small health checks, every few minutes (health-check.timer). Each one reports to its own Uptime
+# Kuma push monitor:
+#   passes                        -> push "up"
+#   fails once                    -> nothing (a reboot or a slow moment shouldn't wake anyone)
+#   fails twice in a row          -> push "down": Kuma alerts the phone through ntfy
+#   never runs (timer, host off)  -> no pushes: Kuma alerts when the monitor's heartbeat runs out
+# Logs (only failures and recoveries): journalctl -u health-check.service
+# Run now: systemctl start health-check.service, or /usr/local/sbin/health-check (prints every result)
+set -uo pipefail
+umask 077
+set -a; . /etc/health-check.env; set +a     # PUSH_URL_<name> for each check
+STATE=/run/health-check                     # failure counts (tmpfs: a reboot starts from zero)
+mkdir -p "$STATE"
+VERBOSE=${VERBOSE_RESULTS:-0}               # print every result: set by the playbook's run_now,
+[ -t 1 ] && VERBOSE=1                       # or automatic when run by hand in a terminal
+
+push() {   # <url> <up|down> <message, %20 for spaces>
+  [ -n "$1" ] || return 0
+  curl -fsS -m 10 --retry 3 -o /dev/null "$1?status=$2&msg=$3" \
+    || echo "warning: could not reach Uptime Kuma"
+}
+
+check() {   # <name> <push url> <expected text> <problem message> <command...>
+  local name=$1 url=$2 expect=$3 problem=$4 out rc fails
+  shift 4
+  out=$(timeout 60 "$@" 2>&1); rc=$?
+  fails=$(cat "$STATE/$name" 2>/dev/null || echo 0)
+  if [ "$rc" -eq 0 ] && grep -qF -- "$expect" <<<"$out"; then
+    [ "$fails" -gt 0 ] && echo "$name: OK again (after $fails failed checks)"
+    [ "$VERBOSE" = 1 ] && echo "$name: OK"
+    echo 0 > "$STATE/$name"
+    push "$url" up OK
+  else
+    fails=$((fails + 1)); echo "$fails" > "$STATE/$name"
+    echo "$name: FAILED ($fails in a row, exit $rc): $(head -c 200 <<<"$out")"
+    if [ "$fails" -ge 2 ]; then
+      push "$url" down "${problem// /%20}"
+    fi
+  fi
+}
+
+{% for c in health_checks %}
+check {{ c.name }} "${PUSH_URL_{{ c.name }}:-}" {{ c.expect | quote }} {{ c.problem | quote }} \
+  {{ c.command | map('quote') | join(' ') }}
+{% endfor %}
+exit 0   # the result of each check goes to Kuma; the service itself always succeeds

@@ -35,6 +35,7 @@ on:
           - "docker - Docker CE on docker_hosts (new machine only)"
           - "host-backup - nightly PBS backup of host folders (install or update)"
           - "rsync-data - nightly copies of critical data to the USB disk + Pi (install or update)"
+          - "health-check - 5-minute health checks (e.g. Plex GPU) reported to Uptime Kuma (install or update)"
           - "kiwix-update - monthly offline Wikipedia/ZIM update on survival (install or update)"
           - "portainer-discover - report only, changes nothing"
           - "timezone - same timezone on every machine (new machine only)"
