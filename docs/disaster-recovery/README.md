@@ -86,10 +86,12 @@ Signs: the host won't boot, or its boot disk is gone. The data drives may be fin
    directory storages with `is_mountpoint yes`).
 5. **Guests:** restore each from PBS, tier by tier, **to their original IDs**. Their bind mounts come
    back with the config.
-6. **Host config** that isn't in a guest: Samba (`/etc/samba/smb.conf`), root's crontab, scripts in
-   `/root`, the NVIDIA driver on skynet (must match Plex's CT). Take each from the old archives.
-7. **Ansible:** re-run `users`, `harden-ssh`, `host-backup` (and on skynet, the runner hosts), and
-   update `known_hosts` for the new host key.
+6. **Host config** that isn't in a guest or in Ansible: Samba (`/etc/samba/smb.conf`), root's
+   crontab, scripts in `/root`, the NVIDIA driver on skynet (must match Plex's CT, see
+   [gpu.md](../gpu.md)). Take each from the old archives.
+7. **Ansible:** re-run `users`, `harden-ssh`, `host-backup`, and on little-skynet `rsync-data`, on
+   skynet `health-check` (and the runner hosts). Update `known_hosts` for the new host key. The
+   push monitors in Uptime Kuma turn green once the jobs run again.
 
 TODO: the order of steps 4–6 for skynet, where Gitea and the Ansible runner are themselves guests.
 
@@ -114,6 +116,13 @@ Today there is **no off-site copy**, so this scenario can only rebuild, not rest
 Fix before this runbook can cover it: an encrypted off-site copy of PBS (or at least Vaultwarden,
 Immich and Paperless). The host-backup archives contain secrets, so an off-site copy must be
 encrypted.
+
+## How you'd find out
+
+Most failures announce themselves on the phone (ntfy): a failed or missing backup run, a failed
+Proxmox/PBS job, an app or host down, Plex's GPU. See [monitoring.md](../monitoring.md). If
+**little-skynet** is down, Uptime Kuma is down with it and nothing alerts: a silent phone plus
+unreachable apps means start with little-skynet.
 
 ## After any recovery
 

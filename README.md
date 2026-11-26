@@ -27,7 +27,14 @@ that are actually restored.
     to 7 daily / 4 weekly / 6 monthly.
   - Bind-mounted data that Proxmox backups skip (Gitea, Immich photos, the offline library) is sent
     by an Ansible-managed job with a backup-only API token. Nightly runs read only changed files;
-    a weekly run reads everything.
+    a weekly run reads everything. The same job backs up each host's own config (`/etc`, `/etc/pve`,
+    `/root`).
+  - Critical data (passwords, documents, photos) also gets nightly copies on a USB disk and a
+    Raspberry Pi, with a consistent SQLite snapshot of the password vault.
+- **Host hardening.** No world-writable files: a shared group with setgid folders and default ACLs
+  for the media drive, root-only credentials, one bind-mount folder per container. A missing drive
+  can't be mistaken for an empty one: `nofail` mounts, immutable mount points, and backup jobs that
+  refuse to run on an unmounted folder. Tested with real reboots.
 - **Offline knowledge library.** A "survival" LXC serves Wikipedia (full, with images), medical,
   repair and preparedness references with Kiwix. A monthly job downloads new versions, checks
   their checksum and size, and never deletes an old copy, so nothing removed upstream is lost here.
@@ -103,7 +110,7 @@ upstream release ─► Renovate PR ─► CI (compose valid, pinned, no secrets
 ```
 
 More detail: **[docs/architecture.md](docs/architecture.md)** (design and decisions) ·
-[docs/hardening.md](docs/hardening.md) (permissions, drives, boot) · [docs/gpu.md](docs/gpu.md) · [docs/monitoring.md](docs/monitoring.md) · [docs/ci-cd.md](docs/ci-cd.md) · [ansible/README.md](ansible/README.md) ·
+[docs/hardening.md](docs/hardening.md) (permissions, drives, boot) · [docs/gpu.md](docs/gpu.md) · [docs/monitoring.md](docs/monitoring.md) · [docs/changelog.md](docs/changelog.md) · [docs/ci-cd.md](docs/ci-cd.md) · [ansible/README.md](ansible/README.md) ·
 [docs/secrets.md](docs/secrets.md)
 
 ## Tech
@@ -146,7 +153,7 @@ ansible/                           inventory, playbooks, bootstrap scripts (see 
   deploy-immich.yml, deploy-portainer.yml   deploy on merge
 .gitea/actions/setup-ansible/   shared: pinned Ansible on the control node
 renovate.json     update policy: what auto-merges, what waits for review, what's locked
-docs/             architecture, hardening, GPUs, monitoring, CI/CD, secrets, disaster recovery
+docs/             architecture, hardening, GPUs, monitoring, CI/CD, secrets, disaster recovery, changelog
 ```
 
 ## Operations reference
@@ -228,6 +235,8 @@ What each label means:
 
 ## Roadmap
 
+Done:
+
 - [x] One repo; secrets out of Git; history cleaned for publishing
 - [x] One Cloudflare tunnel (from 22); admin apps verified to require login
 - [x] Pinned images, Renovate, CI lint, tiered auto-merge
@@ -241,13 +250,37 @@ What each label means:
 - [x] One timezone (Pacific) on every machine, set by Ansible
 - [x] Kiwix public behind Authentik (proxy outpost, group-restricted)
 - [x] Proxmox firewall on the survival LXC: only Authentik can reach Kiwix, so the LAN can't skip the login
-- [ ] Upgrade Proxmox Backup Server 3.4 → 4 (Debian 13), to match PVE 9 on both hosts (soon)
+- [x] Host hardening: no world-writable files, root-only credentials, per-guest bind mounts, read-only backup disk ([docs/hardening.md](docs/hardening.md))
+- [x] Boot safety: `nofail` mounts, immutable mount points, mount checks in every backup job; tested with reboots
+- [x] Host config (`/etc`, `/etc/pve`, `/root`, crontabs) in the nightly host backups
+- [x] Critical-data copies (USB disk + Pi) moved from a hand-made cron script into Ansible
+- [x] Patch safety: `patch-hosts` warns before a reboot if the NVIDIA driver wasn't built for the new kernel
+- [x] Alerts on the phone (ntfy): failed or missing backup runs, failed Proxmox/PBS jobs, apps and hosts down ([docs/monitoring.md](docs/monitoring.md))
+- [x] Plex GPU health check (5-minute push check), after a silent driver/library mismatch ([docs/gpu.md](docs/gpu.md))
+- [x] Disaster-recovery runbook outline; passwords available offline ([docs/disaster-recovery](docs/disaster-recovery/README.md))
+
+Next:
+
+- [ ] Disaster-recovery restore tests: single files from host-backup, a whole drive, a tier-1 guest with its data, a host rebuild walk-through
+- [ ] Upgrade Proxmox Backup Server 3.4 → 4 (Debian 13), to match PVE 9 on both hosts
+- [ ] One PBS API token per host for host-backup
+- [ ] More health checks: disk health (SMART), disk space, PBS datastore space, `patch-guests` runs
+- [ ] Remaining host config into Ansible (Samba, fstab options)
+- [ ] Convert the four privileged containers to unprivileged
+
+Learning projects:
+
+- [ ] **Prometheus + Grafana:** metrics and dashboards next to Uptime Kuma's up/down checks:
+  `node_exporter` on each host (CPU, memory, disk space, temperatures), the Proxmox and PBS
+  exporters, Grafana dashboards, and Alertmanager rules sent to ntfy. Deployed as a stack from this
+  repo, with its own data retention
+- [ ] Dedicated monitoring node on separate hardware (out-of-band monitoring): uptime, health checks, Prometheus and alerting that still work when a whole host is down
+- [ ] Terraform for the guest definitions (LXC/VM sizes, mounts, networks as code)
+- [ ] A job for little-skynet's spare GPU (Quadro P620), e.g. Immich's machine learning
+
+Later:
+
 - [ ] LAN entry point (reverse proxy + split DNS) so logins also work with the internet down
-- [ ] Scheduled restore test from PBS (restore a guest and the host-backup archives, check they start)
-- [x] Alerts on the phone (ntfy): failed or missing backup runs, failed Proxmox/PBS jobs, apps down
-- [x] Plex GPU health check (5-minute push check)
-- [ ] More monitoring: disk health (SMART), disk space, patch runs
-- [ ] Dedicated monitoring node on separate hardware (out-of-band monitoring): uptime, health checks and alerting that still work when a whole host is down
 - [ ] Gitea, Authentik, Plex, Pi-hole as code in this repo
 - [ ] Managed switch + VLANs (management / servers / trusted / IoT / guest)
-- [ ] Offsite backups and a UPS
+- [ ] Offsite backups (encrypted) and a UPS
